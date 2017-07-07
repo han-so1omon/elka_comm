@@ -1,12 +1,7 @@
 #include <algorithm>
 #include <functional>
-
-#if defined(__PX4_QURT) || defined(__PX4_POSIX)
-
 #include <px4_defines.h>
 #include <px4_log.h>
-
-#endif
 
 #include "elka_comm.h"
 
