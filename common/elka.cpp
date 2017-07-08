@@ -12,6 +12,8 @@
 #include <string>
 #include <cstring>
 
+#include <elka_log.h>
+
 #include "elka.h"
 
 //FIXME copy random stuff from <drivers/bootloaders/include/random.h>
@@ -29,12 +31,30 @@ uint16_t util_random(uint16_t min, uint16_t max) {
   return rand % (max - min) + min;
 }
 
+#if defined(__PX4_POSIX) || defined(__PX4_QURT)
+
 const hrt_abstime msg_threshold = 500000;
+
+#elif defined(__ELKA_FREERTOS)
+
+//FIXME should be associated with STM32F4 timer
+
+#endif
 
 //TODO seed in a way that doesn't depend on
 // PX4 hrt_abstime implementation
 void get_dev_id_t(dev_id_t *d) {
+
+#if defined(__PX4_POSIX) || defined(__PX4_QURT)
   util_srand(hrt_absolute_time());
+
+#elif defined(__ELKA_FREERTOS)
+  time_t now;
+
+  time(&now);
+  util_srand(now);
+#endif
+
   *d = util_random(1, ID_MAX);
 }
 
@@ -170,9 +190,9 @@ uint8_t check_elka_ack(struct elka_msg_ack_s &elka_msg_ack,
     // less than or equal
     if ( !(elka_msg_ack.msg_num == msg_num &&
            elka_msg_ack.num_retries <= num_retries) ) {
-      PX4_INFO("elka ack msg num: %d\nmsg num: %d",
+      LOG_INFO("elka ack msg num: %d\nmsg num: %d",
           elka_msg_ack.msg_num, msg_num);
-      PX4_ERR("Ack message specified incorrectly");
+      LOG_ERR("Ack message specified incorrectly");
       return elka_msg_ack_s::ACK_FAILED;
     } else {
       return elka_msg_ack.result;
@@ -236,21 +256,21 @@ void print_elka_msg_id(msg_id_t &msg_id) {
       &snd_params, &msg_type, &msg_len,
       msg_id);
 
-  PX4_INFO("\tid: %" PRMIT "\n\tsnd_id: %" PRDIT "\t\
+  LOG_INFO("\tid: %" PRMIT "\n\tsnd_id: %" PRDIT "\t\
 rcv_id: %" PRDIT "\n\tsnd_params: %d\tmsg_type: %d\tmsg_len: %d\n",
     msg_id,snd_id,rcv_id,snd_params,msg_type,msg_len);
 }
 
 void print_elka_msg(elka_msg_s &elka_msg) {
-  PX4_INFO("-----ELKA msg-----");
+  LOG_INFO("-----ELKA msg-----");
   print_elka_msg_id(elka_msg.msg_id);
-  PX4_INFO("\n");
+  LOG_INFO("\n");
 }
 
 void print_elka_msg_ack(elka_msg_ack_s &elka_msg) {
-  PX4_INFO("-----ELKA msg ack-----");
+  LOG_INFO("-----ELKA msg ack-----");
   print_elka_msg_id(elka_msg.msg_id);
-  PX4_INFO("\n");
+  LOG_INFO("\n");
 }
 
 void print_array(uint8_t *buf, uint8_t len) {
@@ -265,41 +285,41 @@ void print_array(uint8_t *buf, uint8_t len) {
     strcat(to_print, a_char);
   }
 
-  PX4_INFO("array: %s",to_print);
+  LOG_INFO("array: %s",to_print);
 }
 
 void print_elka_serial_array(uint8_t *buf) {
   uint8_t len = *(buf+1);
-  PX4_INFO("serial array");
+  LOG_INFO("serial array");
   print_array(buf,len);
 }
 
 void print_uint8_array(uint8_t *buf, uint8_t len) {
-  PX4_INFO("uint8 array");
+  LOG_INFO("uint8 array");
   print_array(buf,len);
 }
 
 void print_char_array(char *buf, uint8_t len) {
-  PX4_INFO("char array");
+  LOG_INFO("char array");
   print_array((uint8_t *)buf,len);
 }
 
 void print_cb(uint16_t *cb, uint16_t cb_end, uint16_t cb_len,
     uint16_t cb_max_size) {
   uint16_t nxt_idx;
-  PX4_INFO("\nCircular buffer:\nLength: %d\tEnd: %d\n",
+  LOG_INFO("\nCircular buffer:\nLength: %d\tEnd: %d\n",
       cb_len, cb_end);
   for (uint16_t i=0; i < cb_max_size; i++) {
-    PX4_INFO("%d ", *(cb+i));
+    LOG_INFO("%d ", *(cb+i));
   }
-  PX4_INFO("\n");
+  LOG_INFO("\n");
 
   for (uint16_t i=0; i < cb_len; i++) {
-    nxt_idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, i);
-    PX4_INFO("%d ",
+    nxt_idx = get_nxt_idx(cb_end, cb_len, cb_max_size, i);
+    LOG_INFO("%d ",
       *(cb + nxt_idx));
   }
-  PX4_INFO("\n");
+  LOG_INFO("\n");
 }
 
 int cb_bin_search(uint16_t el, uint16_t *cb,
@@ -334,22 +354,22 @@ void cb_insertion_sort(uint16_t *cb, uint16_t cb_end,
   int j;
   uint16_t el, nxt_idx, idx;
   for (int i=1; i < cb_len; i++) {
-    nxt_idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, i);
+    nxt_idx = get_nxt_idx(cb_end, cb_len, cb_max_size, i);
     el = *(cb+nxt_idx);
     j = i-1;
-    nxt_idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, j);
-    idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, j + 1);
+    nxt_idx = get_nxt_idx(cb_end, cb_len, cb_max_size, j);
+    idx = get_nxt_idx(cb_end, cb_len, cb_max_size, j + 1);
     while (j >= 0 && *(cb+nxt_idx) > el) {
       *(cb+idx) = *(cb+nxt_idx);
       j -= 1;
-      idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, j + 1);
-      nxt_idx = get_nxt_idx(cb, cb_end, cb_len, cb_max_size, j);
+      idx = get_nxt_idx(cb_end, cb_len, cb_max_size, j + 1);
+      nxt_idx = get_nxt_idx(cb_end, cb_len, cb_max_size, j);
     }
     *(cb+idx) = el;
   }
 }
 
-uint16_t get_nxt_idx(uint16_t *cb, uint16_t cb_end,
+uint16_t get_nxt_idx(uint16_t cb_end,
     uint16_t cb_len, uint16_t cb_max_size, uint16_t i) {
   return (cb_end - cb_len + i) < 0 ?
     cb_max_size - (cb_len - cb_end) + i : cb_end - cb_len + i;

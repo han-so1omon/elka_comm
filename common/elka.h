@@ -1,7 +1,11 @@
 #ifndef ELKA_H
 #define ELKA_H
 
+#define __STDC_FORMAT_MACROS
+
 #include <ctime>
+#include <stdint.h>
+#include <inttypes.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
@@ -14,7 +18,7 @@
 
 #endif
 
-//FIXME copy random stuff from <drivers/bootloaders/include/random.h>
+//FIXME copy `random` methods from <drivers/bootloaders/include/random.h>
 //      because of linking error
 void util_srand(uint16_t seed);
 uint16_t util_random(uint16_t min, uint16_t max);
@@ -34,9 +38,17 @@ uint16_t util_random(uint16_t min, uint16_t max);
 #define ARRAY 3
 #define PRIORITY_QUEUE 4
 
+#if defined(__PX4_POSIX) || defined(__PX4_QURT)
 // Define threshold for expired message
 //(this assumes hrt_abstime is an integer)
 extern const hrt_abstime msg_threshold;
+
+#elif defined(__ELKA_FREERTOS)
+
+//FIXME should be associated with STM32F4 timer
+extern const time_t msg_threshold;
+
+#endif
 
 // Define device id type
 typedef uint16_t dev_id_t;
@@ -62,6 +74,12 @@ struct elka_msg_id_s {
 struct snd_params_s {
   uint8_t port_num, port_type, proc_side;
 };
+
+#if defined(__ELKA_FREERTOS)
+
+#define UINT16_MAX 0xffff
+
+#endif
 
 // Define max id number
 #define ID_MAX UINT16_MAX
@@ -375,7 +393,7 @@ void cb_push(uint16_t el, uint16_t *cb,
 void cb_insertion_sort(uint16_t *cb, uint16_t cb_end,
     uint16_t cb_len, uint16_t cb_max_size);
 
-uint16_t get_nxt_idx(uint16_t *cb, uint16_t cb_end,
+uint16_t get_nxt_idx(uint16_t cb_end,
     uint16_t cb_len, uint16_t cb_max_size, uint16_t i);
 
 #endif
