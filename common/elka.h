@@ -92,6 +92,8 @@ struct snd_params_s {
 // Define port types
 #define PORT_NONE 0x00
 #define PORT_UART 0x01
+#define PORT_WIFI 0x02
+#define PORT_RADIO 0x03
 
 // Message format thru UART:
 // 8B msg_id, 2B msg_num, <(MAX_MSG_LEN)B data
