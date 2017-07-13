@@ -1,5 +1,5 @@
-#ifndef ELKA_DEVICES_H
-#define ELKA_DEVICES_H
+#ifndef ELKA_POSIX_DEVICES_H
+#define ELKA_POSIX_DEVICES_H
 
 #include <drivers/drv_hrt.h>
 #include <map>

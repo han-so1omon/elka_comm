@@ -1,6 +1,6 @@
 #ifndef ELKA_FREE_RTOS_H
 #define ELKA_FREE_RTOS_H
-#include <elka/common/elka.h>
+#include <elka_comm/common/elka.h>
 #include <elka_defines.h>
 #include <elka_log.h>
 

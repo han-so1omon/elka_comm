@@ -1,6 +1,6 @@
 #include <cstring>
 #include <errno.h>
-#include <px4_log.h>
+#include <elka_log.h>
 
 #include "elka_devices.h"
 
@@ -122,6 +122,34 @@ uint8_t elka::ELKAPort::add_msg(
 
       push_msg(elka_msg, true);
     }
+  }
+
+  return msg_type;
+}
+
+uint8_t add_msg(msg_id_t msg_id,
+                uint16_t msg_num,
+                uint8_t num_retries,
+                uint8_t *data,
+                bool tx) {
+  if (msg_type == MSG_ACK) {
+    elka_msg_ack_s elka_msg;
+
+    elka_msg.msg_id = msg_id;
+    elka_msg.num_retries = num_retries;
+    elka_msg.msg_num = msg_num;
+    elka_msg.result = *data;
+
+    push_msg(elka_msg, tx);
+  } else {
+    elka_msg_s elka_msg;
+    
+    elka_msg.num_retries = num_retries;
+    elka_msg.msg_num = msg_num;
+    elka_msg.msg_id = msg_id;
+    memcpy(elka_msg.data, data, len);
+
+    push_msg(elka_msg, tx);
   }
 
   return msg_type;

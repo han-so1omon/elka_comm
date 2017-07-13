@@ -1,10 +1,10 @@
-#ifndef ELKA_DEVICES_H
-#define ELKA_DEVICES_H
+#ifndef ELKA_FREE_RTOS_DEVICES_H
+#define ELKA_FREE_RTOSDEVICES_H
 
 #include <map>
 #include <stdlib.h>
-#include <elka/common/elka.h>
-#include <elka/common/elka_comm.h>
+#include <elka_comm/common/elka.h>
+#include <elka_comm/common/elka_comm.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
@@ -25,7 +25,7 @@ public:
   // elka_snd is msg to send from tx buf
   // elka_ret is msg to push to rx buf
   // elka_rcv_cmd is msg to be parsed from rx buf
-  struct elka_msg_s _elka_snd, _elka_ret, _elka_ret_cmd;
+  struct elka_msg_s _elka_snd, _elka_rcv;
 
   ELKAPort(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t size, char *dev_name);
@@ -45,6 +45,12 @@ public:
                   uint16_t msg_num,
                   uint8_t *data,
                   dev_id_t *target_dev);
+  
+  uint8_t add_msg(msg_id_t msg_id,
+                  uint16_t msg_num,
+                  uint8_t num_retries,
+                  uint8_t *data,
+                  bool tx);
 
   // Remove and send front message from buffer
   uint8_t send_msg(elka_msg_s &elka_msg);
