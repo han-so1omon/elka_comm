@@ -1,27 +1,26 @@
-#ifndef ELKA_POSIX_DEVICES_H
-#define ELKA_POSIX_DEVICES_H
+#ifndef ELKA_DEVICES_H
+#define ELKA_DEVICES_H
 
-#include <drivers/drv_hrt.h>
 #include <map>
 #include <stdlib.h>
-#include <elka/common/elka.h>
-#include <elka/common/elka_comm.h>
+#include <elka_comm/common/elka.h>
+#include <elka_comm/common/elka_comm.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
 #include <utility>
+#include <elka_defines.h>
 
-#include "elka_posix.h"
 #include "inet_comm.h"
 
 namespace elka {
-class PX4Port;
+class GroundPort;
 }
 
 // Manages connection with an ELKA device
 // Determines mode of input (autonomous or Spektrum)
 // Sends elka_msg_s messages to snapdragon_uart
-class elka::PX4Port : public elka::CommPort {
+class elka::GroundPort : public elka::CommPort {
 public:
 
   // elka_ack_snd is ack to be sent after parsing next cmd from rx_buf
@@ -35,10 +34,10 @@ public:
   orb_advert_t _elka_msg_pub;
   orb_advert_t _elka_ack_pub;
 
-  PX4Port(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
+  GroundPort(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t size, char *dev_name);
 
-  ~PX4Port();
+  ~GroundPort();
 
   // Start serial thread
   int init();
@@ -98,7 +97,7 @@ private:
   */
 
   // This must be updated frequently thru callback or otherwise!
-  hrt_abstime _now;
+  //hrt_abstime _now;
   char _dev_name[MAX_NAME_LEN];
   Child _inet_proc;
 

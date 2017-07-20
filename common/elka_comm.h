@@ -3,6 +3,8 @@
 
 #include "elka.h"
 
+#include <elka_log.h>
+
 #include <vector>
 #include <map>
 

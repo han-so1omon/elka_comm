@@ -1,10 +1,16 @@
 #ifndef ELKA_H
 #define ELKA_H
 
-#include <ctime>
+#define __STDC_FORMAT_MACROS
+
+#include <time.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
+
+#include <elka_log.h>
 
 #if defined(__PX4_QURT) || defined(__PX4_POSIX)
 
@@ -14,7 +20,7 @@
 
 #endif
 
-//FIXME copy random stuff from <drivers/bootloaders/include/random.h>
+//FIXME copy `random` methods from <drivers/bootloaders/include/random.h>
 //      because of linking error
 void util_srand(uint16_t seed);
 uint16_t util_random(uint16_t min, uint16_t max);
@@ -24,19 +30,29 @@ uint16_t util_random(uint16_t min, uint16_t max);
 
 // Max device name length in characters
 #define MAX_NAME_LEN 80
-#define MSG_ID_LEN sizeof(uint32_t)
+#define MSG_ID_SIZE sizeof(uint32_t)
 #define MSG_NUM_LEN 0xffff // Max possible message number + 1
+#define MSG_NUM_SIZE sizeof(uint16_t) 
 #define RECENT_ACKS_LEN 0xff // Length of _recent_acks array
 #define MAX_MSG_LEN 0xff
+#define NUM_RETRIES_SIZE sizeof(uint8_t)
 
 // Define buffer types for TX/RX data
 #define NO_BUF 0
 #define ARRAY 3
 #define PRIORITY_QUEUE 4
 
+#if defined(__PX4_POSIX) || defined(__PX4_QURT)
 // Define threshold for expired message
 //(this assumes hrt_abstime is an integer)
 extern const hrt_abstime msg_threshold;
+
+#elif defined(__ELKA_FREERTOS)
+
+//FIXME should be associated with STM32F4 timer
+extern const time_t msg_threshold;
+
+#endif
 
 // Define device id type
 typedef uint16_t dev_id_t;
@@ -63,6 +79,12 @@ struct snd_params_s {
   uint8_t port_num, port_type, proc_side;
 };
 
+#if defined(__ELKA_FREERTOS)
+
+#define UINT16_MAX 0xffff
+
+#endif
+
 // Define max id number
 #define ID_MAX UINT16_MAX
 
@@ -74,6 +96,8 @@ struct snd_params_s {
 // Define port types
 #define PORT_NONE 0x00
 #define PORT_UART 0x01
+#define PORT_WIFI 0x02
+#define PORT_RADIO 0x03
 
 // Message format thru UART:
 // 8B msg_id, 2B msg_num, <(MAX_MSG_LEN)B data
@@ -349,6 +373,60 @@ inline void set_state_msg(elka_msg_s &elka_snd, uint8_t state,
 void serialize_elka_msg(uint8_t *ret, elka_msg_s &elka_msg);
 void serialize_elka_msg_ack(uint8_t *ret, elka_msg_ack_s &elka_ack);
 
+// Deserialization of elka_msg into components one byte at a time.
+// Does not consider whether deserialized message is correct.
+// @param msg_id = msg_id to retrieve
+// @param msg_num = msg_num to retrieve
+// @param num_retries = num_retries to retrieve
+// @param data = data to retrieve
+// @param curr_byte = byte number while deserializing
+// @return true if msg ready,
+//         else false
+inline bool deserialize_elka_msg(
+                  msg_id_t *msg_id,
+                  uint16_t *msg_num,
+                  uint8_t *num_retries,
+                  uint8_t *data,
+                  uint8_t curr_byte,
+                  uint16_t *curr_byte_num) {
+  static uint8_t msg_id_max_idx = MSG_ID_SIZE;
+  static uint8_t msg_num_max_idx = MSG_ID_SIZE + MSG_NUM_SIZE;
+  static uint8_t num_retries_max_idx = MSG_ID_SIZE +
+                                       MSG_NUM_SIZE + 
+                                       NUM_RETRIES_SIZE;
+
+  static uint8_t data_len=0;
+
+  if (*curr_byte_num < msg_id_max_idx) {
+    *msg_id |= curr_byte << (8*(*curr_byte_num));
+  } else if (*curr_byte_num <  msg_num_max_idx) {
+    *msg_num |= curr_byte <<
+                  (8*(*curr_byte_num -
+                      MSG_ID_SIZE));
+  } else if (*curr_byte_num < num_retries_max_idx) {
+    *num_retries |= curr_byte <<
+                    (8*(*curr_byte_num -
+                        MSG_ID_SIZE -
+                        MSG_NUM_SIZE));
+  } else if (*curr_byte_num < num_retries_max_idx + 
+                              data_len) {
+    *(data + *curr_byte_num -
+             MSG_ID_SIZE -
+             MSG_NUM_SIZE -
+             NUM_RETRIES_SIZE) = curr_byte;
+  } else {
+    LOG_ERR("Trying to deserialize too many bytes");
+    return false;
+  }
+  
+  curr_byte_num++;
+
+  if (*curr_byte_num > num_retries_max_idx + data_len)
+    return true;
+  else
+    return false;
+}
+
 // Elka msg and Elka ack print methods
 void print_elka_msg_id(msg_id_t &msg_id);
 void print_elka_msg(elka_msg_s &elka_msg);
@@ -375,7 +453,7 @@ void cb_push(uint16_t el, uint16_t *cb,
 void cb_insertion_sort(uint16_t *cb, uint16_t cb_end,
     uint16_t cb_len, uint16_t cb_max_size);
 
-uint16_t get_nxt_idx(uint16_t *cb, uint16_t cb_end,
+uint16_t get_nxt_idx(uint16_t cb_end,
     uint16_t cb_len, uint16_t cb_max_size, uint16_t i);
 
 #endif

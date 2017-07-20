@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <functional>
+#include <errno.h>
 
 #if defined(__PX4_QURT) || defined(__PX4_POSIX)
 
@@ -7,6 +8,8 @@
 #include <px4_log.h>
 
 #endif
+
+#include <elka_log.h>
 
 #include "elka_comm.h"
 
@@ -97,7 +100,7 @@ elka::SerialBuffer::SerialBuffer(dev_id_t port_id,
   if (_type == ARRAY) {
   } else if (_type == PRIORITY_QUEUE) {
   } else {
-    PX4_ERR("Unsupported buffer type");
+    LOG_ERR("Unsupported buffer type");
     errno = EINVAL;
   }
 }
@@ -334,7 +337,7 @@ void elka::SerialBuffer::erase_msg(msg_id_t msg_id, uint16_t msg_num,
       get_elka_msg_id_attr(&buf_snd_id,
           NULL, NULL, NULL, NULL, it->_msg_id);
       if (!cmp_dev_id_t(buf_snd_id, msg_snd_id)) {
-        PX4_INFO("erasing msg here");
+        LOG_INFO("erasing msg here");
         _buffer.erase(--(it.base()));
         break;
       }
@@ -413,7 +416,7 @@ bool elka::SerialBuffer::Compare::operator()
       q._msg_id);
 
   /*
-  PX4_INFO("push up? %s", ((msg_priority(p_type) < msg_priority(q_type)) &&
+  LOG_INFO("push up? %s", ((msg_priority(p_type) < msg_priority(q_type)) &&
           p._push_msg_num < q._push_msg_num) ? "true" : "false");
           */
   return ((msg_priority(p_type) < msg_priority(q_type)) &&
@@ -508,7 +511,7 @@ void elka::DeviceRoute::print_dev_props(
     sprintf(nxt_el, "%" PRDPT "; ", *it_props);
     strcat(dev_props, nxt_el);
   }
-  PX4_INFO("\tDevice props: %s", dev_props);
+  LOG_INFO("\tDevice props: %s", dev_props);
 }
 
 void elka::DeviceRoute::print_dev_route(
@@ -525,7 +528,7 @@ void elka::DeviceRoute::print_dev_route(
     sprintf(nxt_el, "-> %" PRDIT " ", *it_route);
     strcat(dev_route, nxt_el);
   }
-  PX4_INFO("\tDevice route: %s", dev_route);
+  LOG_INFO("\tDevice route: %s", dev_route);
 }
 
 //-----------------CommPort Methods---------------------
@@ -1197,25 +1200,25 @@ void elka::CommPort::print_elka_route_msg(elka_msg_s &elka_msg) {
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
   
-  PX4_INFO("----- ELKA route message");
+  LOG_INFO("----- ELKA route message");
   print_elka_msg_id(elka_msg.msg_id);
 
   switch(msg_type) {
     case MSG_ROUTE_TABLE:
-      PX4_INFO("\tRouting table message");
+      LOG_INFO("\tRouting table message");
       num_els = elka_msg.data[0];
       req_resp = elka_msg.data[1];
       parse_route_table(
           num_els,
           &(elka_msg.data[2]), routing_table);
-      PX4_INFO("\tRequesting response: %d", req_resp);
+      LOG_INFO("\tRequesting response: %d", req_resp);
       print_routing_table(routing_table);
       break;
     case MSG_ROUTE_DEV_PROPS:
-      PX4_INFO("\tRouting table message");
+      LOG_INFO("\tRouting table message");
       req_resp = elka_msg.data[0];
       num_els = elka_msg.data[1];
-      PX4_INFO("\tRequesting response: %d", req_resp);
+      LOG_INFO("\tRequesting response: %d", req_resp);
       parse_dev_props(num_els,
           &(elka_msg.data[2]),
           props);
@@ -1224,7 +1227,7 @@ void elka::CommPort::print_elka_route_msg(elka_msg_s &elka_msg) {
       break;
   }
 
-  PX4_INFO("----- End route message\n");
+  LOG_INFO("----- End route message\n");
 }
 
 void elka::CommPort::print_routing_table(
@@ -1232,7 +1235,7 @@ void elka::CommPort::print_routing_table(
   std::map<dev_id_t,DeviceRoute, dev_id_tCmp>::iterator
       it_route_table = routing_table.begin();
   for(; it_route_table != routing_table.end(); it_route_table++) {
-    PX4_INFO("\tDevice id: %d",it_route_table->first);
+    LOG_INFO("\tDevice id: %d",it_route_table->first);
 
     elka::DeviceRoute::print_dev_route(
         it_route_table->second._route);

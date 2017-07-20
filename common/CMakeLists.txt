@@ -12,14 +12,24 @@ px4_add_module(
 
 elseif(${OS} STREQUAL "FreeRTOS")
 
-add_library(elka_comm STATIC
+add_library(elka_comm__common STATIC
 	elka.cpp
 	elka_comm.cpp
 )
 
 set(ELKA_LINK_LIBS
-  "${ELKA_LINK_LIBS} elka_comm"
+  "${ELKA_LINK_LIBS} elka_comm__common"
 )
+
+elseif(${OS} STREQUAL "ubuntu")
+
+pybind11_add_module(modules__elka_comm__common
+	SHARED
+	elka.cpp
+	elka_comm.cpp
+)
+
+add_dependencies(modules__elka_comm__common msg_gen)
 
 else()
 
