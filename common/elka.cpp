@@ -381,4 +381,3 @@ uint16_t get_nxt_idx(uint16_t cb_end,
   return (cb_end - cb_len + i) < 0 ?
     cb_max_size - (cb_len - cb_end) + i : cb_end - cb_len + i;
 }
-
