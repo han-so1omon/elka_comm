@@ -29,7 +29,7 @@ public:
   // elka_snd is msg to send from tx buf
   // elka_ret is msg to push to rx buf
   // elka_rcv_cmd is msg to be parsed from rx buf
-  struct elka_msg_s _elka_snd, _elka_ret, _elka_ret_cmd;
+  struct elka_msg_s _elka_snd, _elka_rcv, _elka_rcv_cmd;
 
   orb_advert_t _elka_msg_pub;
   orb_advert_t _elka_ack_pub;
@@ -83,13 +83,13 @@ public:
   // Update _now variable with current time
   void update_time();
 
-private:
-  
   bool start_port() override;
   bool stop_port() override;
   bool pause_port() override;
   bool resume_port() override;
 
+private:
+  
   /*
   // Map from port id to port num
   // IDs correspond to _ports[i]->_id
@@ -125,4 +125,46 @@ private:
                          struct elka_msg_id_s &msg_id);
 
 };
+
+// Python bindings for pybind11
+#if defined(__ELKA_UBUNTU)
+ 
+namespace elka {
+
+// Trampoline class for CommPort. Defined to override virtual
+// methods
+template <class GroundPortBase = GroundPort> struct PyGroundPort : public PyCommPort<GroundPortBase> {
+
+	// Inherent constructors
+	using PyCommPort<GroundPortBase>::PyCommPort;
+
+  bool start_port() override {
+    PYBIND11_OVERLOAD(bool,
+										  GroundPortBase, 
+										  start_port, );
+  }
+
+  bool stop_port() override {
+    PYBIND11_OVERLOAD(bool,
+										  GroundPortBase, 
+										  stop_port, );
+  }
+
+  bool pause_port() override {
+    PYBIND11_OVERLOAD(bool,
+										  GroundPortBase, 
+										  pause_port, );
+  }
+
+  bool resume_port() override {
+    PYBIND11_OVERLOAD(bool,
+										  GroundPortBase, 
+										  resume_port, );
+  }
+};
+
+} // namespace elka
+
+#endif
+
 #endif

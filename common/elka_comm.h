@@ -387,6 +387,9 @@ namespace elka {
 // Trampoline class for CommPort. Defined to override virtual
 // methods
 template <class CommPortBase = CommPort> struct PyCommPort : public CommPortBase {
+  // Inherent constructors
+  using CommPortBase::CommPortBase;
+
   bool start_port() override {
     PYBIND11_OVERLOAD_PURE(bool,
                            CommPortBase, 

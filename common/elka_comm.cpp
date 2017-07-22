@@ -1531,6 +1531,20 @@ PYBIND11_MODULE(elka_comm__common, m) {
 	py::class_<elka::CommPort, elka::PyCommPort<>> (m, "CommPort")
 		.def_readwrite("_id", &elka::CommPort::_id)
 		.def_readwrite("_state", &elka::CommPort::_state)
+		.def("__init__", 
+				 [](elka::CommPort &cp,
+						uint8_t port_n, uint8_t port_t,
+						uint8_t buf_type, uint8_t size) {
+						new (&cp) elka::PyCommPort<>(port_n, port_t,
+																		 buf_type, size);
+				 })
+/*
+  CommPort(uint8_t port_n, uint8_t port_t, uint8_t buf_type,
+      uint8_t size);
+  // virtual destructor so that derived class destructor is called.
+  virtual ~CommPort(); 
+*/
+
 		/* In case this method is ever implemented
 		.def("push_msg",
 			(uint8_t (elka::CommPort::*)(dev_id_t &, uint8_t,
