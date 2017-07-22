@@ -316,7 +316,7 @@ uint8_t elka::PX4Port::parse_elka_msg(elka_msg_ack_s &elka_msg) {
     //    It is not from you (avoid creating cycle in graph)
     return push_msg(elka_msg, true);
   } else if (check_ack(elka_msg)
-      == elka_msg_ack_s::ACK_FAILED) {
+      == MSG_FAILED) {
     return MSG_FAILED;
   } else 
     return MSG_ACK;
@@ -325,101 +325,91 @@ uint8_t elka::PX4Port::parse_elka_msg(elka_msg_ack_s &elka_msg) {
 uint8_t elka::PX4Port::parse_motor_cmd(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  uint8_t state = _state;
-
-  // Get ELKA to STATE_RESUME state if possible
-  switch (state) {
-    case STATE_START:
-      resume_port();
+  switch (_sw_state) {
+    case SW_CTL_SPEKTRUM:
+      return MSG_DENIED;
+    case SW_CTL_REMOTE:
+      return push_msg(elka_msg, true);
       break;
-    case STATE_STOP:
-      start_port();
-      break;
-    case STATE_PAUSE:
-      resume_port();
-      break;
-    case STATE_RESUME:
+    case SW_CTL_AUTOPILOT:
+      return push_msg(elka_msg, true);
       break;
     default:
+      return MSG_FAILED;
       break;
   }
-
-  // Check state again to see that it is STATE_RESUME
-  state = _state;
-  if (state == STATE_RESUME) {
-    if (push_msg(elka_msg, false)) {
-      return MSG_NULL;
-    }
-  } else {
-    return MSG_FAILED;
-  }
-
-  return msg_id.type;
 }
 
 uint8_t elka::PX4Port::parse_port_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  uint8_t ret;
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
 
-  get_elka_msg_id_attr(NULL, NULL, NULL, &ret, NULL,
-      elka_msg.msg_id);
+  elka_ack.msg_num = elka_msg.msg_num;
+  elka_ack.num_retries = elka_msg.num_retries;
 
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  elka_ack.msg_num = elka_msg.msg_num;
-  elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-  elka_ack.num_retries = elka_msg.num_retries;
-  return ret;
+  if (request) {
+    switch (action) {
+      case HW_CTL_START:
+        elka_ack.result = start_port();
+        break;
+      case HW_CTL_STOP:
+        elka_ack.result = stop_port();
+        break;
+      case HW_CTL_PAUSE:
+        elka_ack.result = pause_port();
+        break;
+      case HW_CTL_RESUME:
+        elka_ack.result = resume_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
+        return MSG_FAILED;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
+  }
+
+  return msg_id.type;
 }
 
 uint8_t elka::PX4Port::parse_elka_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  elka_ack.msg_num = elka_msg.msg_num;
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
   
+  elka_ack.msg_num = elka_msg.msg_num;
+  elka_ack.num_retries = elka_msg.num_retries;
+
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  uint8_t nxt_state = elka_msg.data[0];
-  switch (nxt_state) {
-    case STATE_START:
-      if (!start_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
+  if (request) {
+    switch (action) {
+      case SW_CTL_REMOTE:
+        elka_ack.result = remote_ctl_port();
+        break;
+      case SW_CTL_AUTOPILOT:
+        elka_ack.result = autopilot_ctl_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
         return MSG_FAILED;
-      }
-      break;
-    case STATE_STOP:
-      if (!stop_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    case STATE_PAUSE:
-      if (!pause_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    case STATE_RESUME:
-      if (!resume_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    default:
-      elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
-      return MSG_FAILED;
-      break;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
   }
-
-  elka_ack.result = elka_msg_ack_s::ACK_ACCEPTED;
-
   return msg_id.type;
 }
 
@@ -434,21 +424,21 @@ uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
 
   // Check that ack is meant for this device
   if (cmp_dev_id_t(ack_id.rcv_id, _id)) {
-    return elka_msg_ack_s::ACK_NULL;
+    return MSG_NULL;
   } else {
     sb = _tx_buf;
   }
  
   // First check if message number has recently been acked
   // If message has recently been acked then
-  // return elka_msg_ack_s::ACK_NULL
+  // return MSG_NULL
   // Else then check if message exists in buffer
   //    If message exists, then return check_elka_ack(...)
   //        Then add message number to list of recently acked messages
   //        Then remove message from buffer
-  //    Else return elka_msg_ack_s::ACK_NULL
+  //    Else return MSG_NULL
   if ((ret = sb->check_recent_acks(elka_ack.msg_num)) !=
-              elka_msg_ack_s::ACK_NULL) {
+              MSG_NULL) {
     msg_id_t erase_msg_id;
     ElkaBufferMsg *ebm;
    
@@ -458,11 +448,11 @@ uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
                   ebm->_msg_id,
                   ebm->_rmv_msg_num,
                   ebm->_num_retries)) ==
-           elka_msg_ack_s::ACK_FAILED) {
+           MSG_FAILED) {
         PX4_WARN("Ack failed msg_id %d msg_num %d. %d retries",
             ebm->_msg_id, ebm->_rmv_msg_num,
             ebm->_num_retries);
-      } else if (ret != elka_msg_ack_s::ACK_NULL) {
+      } else if (ret != MSG_NULL) {
         // Message received and processed fine, so erase it
         erase_msg_id = ebm->_msg_id;
         //sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num);
@@ -473,10 +463,6 @@ uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
   }
 
   return ret;
-}
-
-uint8_t elka::PX4Port::get_state() {
-  return _state;
 }
 
 void elka::PX4Port::update_time() {
@@ -505,8 +491,11 @@ int elka::PX4Port::deinitialize() {
   return PX4_OK;
 }
 
-bool elka::PX4Port::start_port() {
-  _state = STATE_START;
+uint8_t elka::PX4Port::start_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_START;
+  _prev_hw_state = tmp_state;
 
   //FIXME determine client or server programattically
   // For client
@@ -527,25 +516,57 @@ bool elka::PX4Port::start_port() {
       _rx_buf);
   */
 
-  resume_port();
-
-  return true;
+  return resume_port();
 }
 
-bool elka::PX4Port::stop_port() {
-  _state = STATE_STOP;
+uint8_t elka::PX4Port::stop_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_STOP;
+  _prev_hw_state = tmp_state;
   
   //wait_for_child(&_inet_proc);
 
-  return true;
+  return MSG_ACCEPTED;
 }
 
-bool elka::PX4Port::pause_port() {
-  _state = STATE_PAUSE;
-  return true;
+uint8_t elka::PX4Port::pause_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_PAUSE;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
 }
 
-bool elka::PX4Port::resume_port() {
-  _state = STATE_RESUME;
-  return true;
+uint8_t elka::PX4Port::resume_port() {
+  uint8_t tmp_state = _hw_state;
+  
+  _hw_state = HW_CTL_RESUME;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
+}
+
+uint8_t elka::PX4Port::remote_ctl_port() {
+  uint8_t tmp_state = _sw_state;
+
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_REMOTE;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
+
+  return MSG_ACCEPTED;
+
+}
+
+uint8_t elka::PX4Port::autopilot_ctl_port() {
+  uint8_t tmp_state = _sw_state;
+  
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_AUTOPILOT;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
+
+  return MSG_ACCEPTED;
 }

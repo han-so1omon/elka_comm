@@ -219,6 +219,7 @@ int elka_rx_loop(int argc, char **argv) {
       if (fds[0].revents & POLLIN) { // input_rc
         orb_copy(ORB_ID(input_rc), input_rc_sub_fd,
             &elka_dev->_input_rc);
+        elka_dev->parse_spektrum_msg(elka_dev->_input_rc);
       }
       
       if (fds[1].revents & POLLIN) { // elka_msg_ack
@@ -273,19 +274,20 @@ int elka_parse_loop(int argc, char **argv) {
       if ((parse_res = elka_dev->parse_elka_msg(
                           elka_dev->_elka_ack_rcv_cmd))
           == MSG_FAILED) {
-        PX4_ERR("Failed message for msg id: " PRMIT "",
-            elka_dev->_elka_ack_rcv_cmd.msg_id);
+        PX4_ERR("Failed message:");
+        print_elka_msg_id(elka_dev->_elka_ack_rcv_cmd.msg_id);
       }
     } else if (nxt_msg_type[1] != MSG_NULL) {
 
       // Parse message
-      // Send ack if the message requires one
-      //  (done in parse function)
       if ((parse_res = elka_dev->parse_elka_msg(
                           elka_dev->_elka_rcv_cmd))
           == MSG_FAILED) {
-        PX4_ERR("Failed message for msg id: " PRMIT "",
-            elka_dev->_elka_rcv_cmd.msg_id);
+        PX4_ERR("Failed message:");
+        print_elka_msg_id(elka_dev->_elka_rcv_cmd.msg_id);
+      } else if (parse_res == MSG_DENIED) {
+        PX4_ERR("Denied message:");
+        print_elka_msg_id(elka_dev->_elka_rcv_cmd.msg_id);
       }
     }
 
