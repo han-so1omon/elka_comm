@@ -319,6 +319,12 @@ void get_elka_msg_id_attr(
     uint8_t *snd_params, uint8_t *msg_type, uint8_t *length,
     msg_id_t msg_id);
 
+inline int8_t cmp_msg_id_t(msg_id_t m1, msg_id_t m2) {
+  if (m1 < m2) return -1;
+  else if (m1 > m2) return 1;
+  else return 0;
+}
+
 // Return true if message is broadcast message
 inline bool broadcast_msg(msg_id_t &msg_id) {
   dev_id_t rcv_id;
@@ -333,14 +339,17 @@ inline bool broadcast_msg(dev_id_t &rcv_id) {
   return !cmp_dev_id_t(rcv_id,BROADCAST_MSG_ID);
 }
 
-inline bool initial_msg(msg_id_t &msg_id) {
+inline bool initial_msg(msg_id_t &msg_id,
+                        uint16_t msg_num,
+                        uint8_t num_retries) {
   dev_id_t snd_id, rcv_id;
 
   get_elka_msg_id_attr(&snd_id,&rcv_id,NULL,NULL,NULL,
       msg_id);
 
-  return !( cmp_dev_id_t(snd_id,(dev_id_t)0) || 
-            cmp_dev_id_t(rcv_id,(dev_id_t)0) );
+  return (!cmp_msg_id_t(msg_id, (msg_id_t)0) &&
+          msg_num == 0 &&
+          num_retries == 0);
 }
 
 // Check ELKA ack against known msg_id and msg_num
@@ -436,7 +445,7 @@ inline bool deserialize_elka_msg(
 // Elka msg and Elka ack print methods
 void print_elka_msg_id(msg_id_t &msg_id);
 void print_elka_msg(elka_msg_s &elka_msg);
-void print_elka_msg_ack(elka_msg_ack_s &elka_msg);
+void print_elka_msg(elka_msg_ack_s &elka_msg);
 void print_elka_routing_msg(elka_msg_s &elka_msg);
 
 // Buffer print convenience methods
