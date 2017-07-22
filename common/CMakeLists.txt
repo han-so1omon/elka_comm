@@ -23,13 +23,13 @@ set(ELKA_LINK_LIBS
 
 elseif(${OS} STREQUAL "ubuntu")
 
-pybind11_add_module(modules__elka_comm__common
+pybind11_add_module(elka_comm__common
 	SHARED
 	elka.cpp
 	elka_comm.cpp
 )
 
-add_dependencies(modules__elka_comm__common msg_gen)
+add_dependencies(elka_comm__common msg_gen)
 
 else()
 

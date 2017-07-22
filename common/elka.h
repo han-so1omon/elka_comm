@@ -18,6 +18,11 @@
 #include <drivers/drv_hrt.h>
 #include <platforms/px4_time.h>
 
+#elif defined(__ELKA_UBUNTU)
+
+#include <pybind11/pybind11.h>
+
+namespace py = pybind11;
 #endif
 
 //FIXME copy `random` methods from <drivers/bootloaders/include/random.h>
@@ -251,7 +256,8 @@ inline int8_t cmp_dev_id_t(dev_id_t d1, dev_id_t d2) {
 // Routing table is sorted so that closest devices
 // are near the front
 struct dev_id_tCmp {
-  bool operator()(const dev_id_t &d1, const dev_id_t &d2) const {
+  bool operator()(const dev_id_t &d1,
+												 const dev_id_t &d2) {
     return d1 < d2;
   }
 };

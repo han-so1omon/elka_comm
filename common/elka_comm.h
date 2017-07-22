@@ -374,12 +374,48 @@ struct elka::CommPort {
   bool check_dev_compatible(uint8_t msg_type,
                        dev_id_t dst);
   
-
   static void print_elka_route_msg(elka_msg_s &elka_msg);
   static void print_routing_table(
       std::map<dev_id_t,DeviceRoute, dev_id_tCmp> &routing_table);
 };
 
+// Python bindings for pybind11
+#if defined(__ELKA_UBUNTU)
+ 
+namespace elka {
 
+// Trampoline class for CommPort. Defined to override virtual
+// methods
+template <class CommPortBase = CommPort> struct PyCommPort : public CommPortBase {
+  bool start_port() override {
+    PYBIND11_OVERLOAD_PURE(bool,
+                           CommPortBase, 
+                           start_port, );
+  }
+
+  bool stop_port() override {
+    PYBIND11_OVERLOAD_PURE(bool,
+                           CommPortBase, 
+                           stop_port, );
+  }
+
+  bool pause_port() override {
+    PYBIND11_OVERLOAD_PURE(bool,
+                           CommPortBase, 
+                           pause_port, );
+  }
+
+  bool resume_port() override {
+    PYBIND11_OVERLOAD_PURE(bool,
+                           CommPortBase, 
+                           resume_port, );
+  }
+
+  
+};
+
+} // namespace elka
+
+#endif
 
 #endif
