@@ -25,6 +25,7 @@ elseif(${OS} STREQUAL "ubuntu")
 
 pybind11_add_module(elka_comm__common
 	SHARED
+	pyelka_common.cpp
 	elka.cpp
 	elka_comm.cpp
 )
