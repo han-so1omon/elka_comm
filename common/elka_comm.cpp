@@ -1358,7 +1358,7 @@ void elka::CommPort::print_elka_ctl_msg(elka_msg_s &elka_msg) {
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
   
-  PX4_INFO("-----ELKA ctl message-----\n\
+  LOG_INFO("-----ELKA ctl message-----\n\
 # %" PRIu16 ", retries: %" PRIu16 "",
            elka_msg.msg_num, elka_msg.num_retries);
   print_elka_msg_id(elka_msg.msg_id);
@@ -1416,7 +1416,7 @@ void elka::CommPort::print_elka_ctl_msg(elka_msg_s &elka_msg) {
 
       break;
     default:
-      PX4_INFO("------Not control message type-------");
+      LOG_INFO("------Not control message type-------");
       return;
       break;
   }
@@ -1432,9 +1432,9 @@ void elka::CommPort::print_elka_ctl_msg(elka_msg_s &elka_msg) {
       break;
   }
 
-  PX4_INFO("%s %s %s", msg_type_name, request, state);
+  LOG_INFO("%s %s %s", msg_type_name, request, state);
 
-  PX4_INFO("----- End ctl message\n");
+  LOG_INFO("----- End ctl message\n");
 }
 
 void elka::CommPort::print_elka_state() {
@@ -1488,6 +1488,6 @@ void elka::CommPort::print_elka_state() {
       break;
   }
 
-  PX4_INFO("ELKA HW state: %s\tSW state: %s",
+  LOG_INFO("ELKA HW state: %s\tSW state: %s",
       hw_state, sw_state);
 }

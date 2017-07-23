@@ -2,14 +2,6 @@
 
 #include <common/pyelka_common.h>
 
-/*
-// Define device properties type
-typedef uint8_t dev_prop_t;
-
-// Define msg_id type
-typedef uint64_t msg_id_t;
-*/
-
 #include <pybind11/pytypes.h>
 #include <pybind11/stl.h>
 
@@ -60,13 +52,9 @@ namespace pybind11 { namespace detail {
 		}
 	};
 
+  /* FIXME will we have to explicitly cast to (dev_prop_t) in c++?
 	template <> struct type_caster<dev_prop_t> {
 	public:
-		/**
-		 * This macro establishes the name 'dev_prop_t' in
-		 * function signatures
-		 */
-		PYBIND11_TYPE_CASTER(dev_prop_t, _("dev_prop_t"));
 
 		bool load(handle src, bool convert) {
 			PyObject *source = src.ptr();
@@ -78,10 +66,11 @@ namespace pybind11 { namespace detail {
 			return !(value == -1 && !PyErr_Occurred());
 		}
 
-		static handle cast(dev_prop_t src, return_value_policy /* policy */, handle /* parent */) {
+		static handle cast(dev_prop_t src, return_value_policy , handle ) {
 			return PyLong_FromUnsignedLong((unsigned long) src);
 		}
 	};
+  */
 
 	template <> struct type_caster<msg_id_t> {
 	public:
@@ -285,7 +274,16 @@ PYBIND11_MODULE(elka_comm__common, m) {
 
 	py::class_<elka::CommPort, elka::PyCommPort<>> (m, "CommPort")
 		.def_readwrite("_id", &elka::CommPort::_id)
-		.def_readwrite("_state", &elka::CommPort::_state)
+		.def_readwrite("_hw_state", &elka::CommPort::_hw_state)
+		.def_readwrite("_sw_state", &elka::CommPort::_sw_state)
+		.def_readwrite("_prev_hw_state",
+                   &elka::CommPort::_prev_hw_state)
+		.def_readwrite("_prev_sw_state",
+                   &elka::CommPort::_prev_sw_state)
+		.def_readwrite("_spektrum_channel_kill",
+                   &elka::CommPort::_spektrum_channel_kill)
+		.def_readwrite("_spektrum_channel_switch",
+                   &elka::CommPort::_spektrum_channel_switch)
 		.def("__init__", 
 				 [](elka::CommPort &cp,
 						uint8_t port_n, uint8_t port_t,
@@ -307,6 +305,7 @@ PYBIND11_MODULE(elka_comm__common, m) {
 			&elka::CommPort::push_msg,
 			"Push elka message by parameters")
 		*/
+    .def("get_state", &elka::CommPort::get_state)
 		.def("push_msg",
 				 (uint8_t (elka::CommPort::*)
 									(elka_msg_s &, bool))
@@ -354,7 +353,11 @@ device route vector")
 		.def_static("print_elka_route_msg",
 	  		 &elka::CommPort::print_elka_route_msg)
 		.def_static("print_routing_table",
-	  		 &elka::CommPort::print_routing_table);
+	  		 &elka::CommPort::print_routing_table)
+    .def_static("print_elka_ctl_msg",
+         &elka::CommPort::print_elka_ctl_msg)
+    .def("print_elka_state",
+        &elka::CommPort::print_elka_state);
 
 	py::class_<elka_msg_s>(m, "elka_msg_s")
 		.def_readwrite("msg_id", &elka_msg_s::msg_id)

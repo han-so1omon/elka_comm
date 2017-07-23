@@ -3,35 +3,16 @@
 
 #include "elka_devices.h"
 
+elka::GroundPort *elka::GroundPort::_instance = nullptr;
+
 //-----------------Public Methods----------------------
 elka::GroundPort::GroundPort(uint8_t port_num, uint8_t port_type,
     uint8_t buf_type, uint8_t size, char *dev_name) 
     : elka::CommPort(port_num, port_type, buf_type, size) {
-  if (!(init() == ELKA_OK)) {
-    LOG_ERR("Unable to initialize elka device %s",dev_name);
-    errno = ECANCELED;
-  } else {
-    strcpy(_dev_name, dev_name);
 
-    get_snd_params(&_snd_params, port_num, port_type,
-      DEV_PROP_POSIX_SIDE);
-  }
-}
-
-elka::GroundPort::~GroundPort() {
-  if (!(deinit() == ELKA_OK)) {
-    LOG_ERR("Unable to deinitialize elka device %s",
-    _dev_name);
-    errno = ECANCELED;
-  };
-
-  delete _tx_buf;
-  delete _rx_buf;
-}
-
-int elka::GroundPort::init() {
   memset(&_elka_ack_snd, 0, sizeof(_elka_ack_snd));
   memset(&_elka_ack_rcv, 0, sizeof(_elka_ack_rcv));
+  memset(&_elka_ack_rcv_cmd, 0, sizeof(_elka_ack_rcv_cmd));
   memset(&_elka_snd, 0, sizeof(_elka_snd));
   memset(&_elka_rcv, 0, sizeof(_elka_rcv));
   memset(&_elka_rcv_cmd, 0, sizeof(_elka_rcv_cmd));
@@ -54,10 +35,40 @@ int elka::GroundPort::init() {
   _routing_table[_id].add_prop(DEV_PROP_SPIN_MOTORS);
   _routing_table[_id].add_prop(DEV_PROP_USE_CAMERA);
   _routing_table[_id].add_prop(DEV_PROP_HAS_CAMERA);
+  _routing_table[_id].add_prop(DEV_PROP_TRANSMISSION_CTL);
+
+  strcpy(_dev_name, dev_name);
+
+  get_snd_params(&_snd_params, port_num, port_type,
+    DEV_PROP_POSIX_SIDE);
 
   start_port();
+}
 
-  return ELKA_OK;
+elka::GroundPort::~GroundPort() {
+  if (!(deinitialize() == ELKA_OK)) {
+    LOG_ERR("Unable to deinitialize elka device %s",
+    _dev_name);
+    errno = ECANCELED;
+  };
+
+  delete _tx_buf;
+  delete _rx_buf;
+}
+
+int elka::GroundPort::initialize(
+      uint8_t port_num, uint8_t port_type, uint8_t buf_type,
+      uint8_t queue_sz, char *dev_name) {
+  if (_instance == nullptr) {
+    _instance = new GroundPort(port_num, port_type,
+        buf_type, queue_sz, dev_name);
+  }
+
+  return _instance != nullptr;
+}
+
+bool elka::GroundPort::print_statistics(bool reset) {
+  return false;
 }
 
 // msg_num and num_retries are useful parameters only
@@ -83,7 +94,6 @@ uint8_t elka::GroundPort::add_msg(
   // TODO
   if (msg_type == MSG_ROUTE_DEV_PROPS && !target_dev) {
     elka_msg_s elka_msg;
-
     get_elka_msg_id(&elka_msg.msg_id,
       _id, 0, _snd_params,
       msg_type, len);
@@ -96,12 +106,16 @@ uint8_t elka::GroundPort::add_msg(
   } else if (target_dev) {
     target_devs.push_back(*target_dev); 
   } else {
-    std::map<dev_id_t, DeviceRoute, dev_id_tCmp>::iterator
+    std::map<dev_id_t,
+             DeviceRoute,
+             dev_id_tCmp>::iterator
         dev_routes = _routing_table.begin();
     for (; dev_routes != _routing_table.end(); dev_routes++) {
-      if ( check_dev_compatible(msg_type,
-                               dev_routes->first) )
+      if ( cmp_dev_id_t(dev_routes->first, _id) && 
+           check_dev_compatible(msg_type,
+                               dev_routes->first) ) {
         target_devs.push_back(dev_routes->first);
+      }
     }
   }
 
@@ -121,7 +135,7 @@ uint8_t elka::GroundPort::add_msg(
 
       push_msg(elka_msg, true);
     }
-  } else {
+  } else if (msg_type != MSG_NULL) {
     elka_msg_s elka_msg;
     
     for (; curr_dev != target_devs.end(); curr_dev++) {
@@ -129,9 +143,8 @@ uint8_t elka::GroundPort::add_msg(
         _id, *curr_dev, _snd_params,
         msg_type, len);
 
-      // num_retries and msg_num not used if tx msg
-      //elka_msg.num_retries = num_retries;
-      //elka_msg.msg_num = msg_num;
+      elka_msg.num_retries = num_retries;
+      elka_msg.msg_num = msg_num;
       memcpy(elka_msg.data, data, len);
 
       push_msg(elka_msg, true);
@@ -140,6 +153,29 @@ uint8_t elka::GroundPort::add_msg(
 
   return msg_type;
 }
+
+uint8_t elka::GroundPort::set_dev_state_msg(
+    elka_msg_s &elka_snd,
+    dev_id_t rcv_id,
+    uint8_t state,
+    bool elka_ctl) {
+  uint8_t msg_t;
+  if (elka_ctl) {
+    msg_t = MSG_ELKA_CTL;
+  } else {
+    msg_t = MSG_PORT_CTL;
+  }
+
+  set_state_msg(elka_snd, state,
+                _id, rcv_id,
+                _snd_params, msg_t, 1);
+
+  elka_snd.msg_num = 0;
+  elka_snd.num_retries = 0;
+
+  return state;
+}
+
 
 // TODO eventually put this in common elka library
 // TODO get rid of parameter, as _elka_snd should be set
@@ -208,7 +244,9 @@ uint8_t elka::GroundPort::parse_elka_msg(elka_msg_s &elka_msg) {
   // to determine correct method of parsing message.
   if (( !(in_route = check_route(msg_id.rcv_id)) &&
         !broadcast_msg(msg_id.rcv_id) ) ||
-      initial_msg(elka_msg.msg_id)) {
+      initial_msg(elka_msg.msg_id,
+                  elka_msg.msg_num,
+                  elka_msg.num_retries)) {
     return MSG_NULL;
   } else if (in_route &&
              cmp_dev_id_t(msg_id.rcv_id, _id) &&
@@ -252,100 +290,123 @@ uint8_t elka::GroundPort::parse_elka_msg(elka_msg_s &elka_msg) {
   return parse_res;
 }
 
+uint8_t elka::GroundPort::parse_elka_msg(elka_msg_ack_s &elka_msg) {
+  dev_id_t snd_id, rcv_id;
+  bool in_route;
+
+  get_elka_msg_id_attr(&snd_id, &rcv_id,
+                       NULL, NULL, NULL,
+                       elka_msg.msg_id);
+
+  // Check that device can be reached.
+  // If message is not meant for you, then push it thru.
+  // If message is meant for you, then check message type
+  // to determine correct method of parsing message.
+  if (!(in_route = check_route(rcv_id))) {
+    return MSG_NULL;
+  } else if (in_route &&
+             cmp_dev_id_t(rcv_id, _id) &&
+             cmp_dev_id_t(snd_id, _id)) {
+    // Push message along if:
+    //    It can be reached 
+    //    It is not for you
+    //    It is not from you (avoid creating cycle in graph)
+    return push_msg(elka_msg, true);
+  } else if (check_ack(elka_msg)
+      == MSG_FAILED) {
+    return MSG_FAILED;
+  } else 
+    return MSG_ACK;
+}
+
 uint8_t elka::GroundPort::parse_motor_cmd(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  uint8_t state = _state;
-
-  // Get ELKA to STATE_RESUME state if possible
-  switch (state) {
-    case STATE_START:
-      resume_port();
+  switch (_sw_state) {
+    case SW_CTL_SPEKTRUM:
+      return MSG_DENIED;
+    case SW_CTL_REMOTE:
+      return push_msg(elka_msg, true);
       break;
-    case STATE_STOP:
-      start_port();
-      break;
-    case STATE_PAUSE:
-      resume_port();
-      break;
-    case STATE_RESUME:
+    case SW_CTL_AUTOPILOT:
+      return push_msg(elka_msg, true);
       break;
     default:
+      return MSG_FAILED;
       break;
   }
-
-  // Check state again to see that it is STATE_RESUME
-  state = _state;
-  if (state == STATE_RESUME) {
-    if (push_msg(elka_msg, false)) {
-      return MSG_NULL;
-    }
-  } else {
-    return MSG_FAILED;
-  }
-
-  return msg_id.type;
 }
 
 uint8_t elka::GroundPort::parse_port_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
 
   elka_ack.msg_num = elka_msg.msg_num;
-  
+  elka_ack.num_retries = elka_msg.num_retries;
+
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-  return MSG_FAILED; //TODO
+  if (request) {
+    switch (action) {
+      case HW_CTL_START:
+        elka_ack.result = start_port();
+        break;
+      case HW_CTL_STOP:
+        elka_ack.result = stop_port();
+        break;
+      case HW_CTL_PAUSE:
+        elka_ack.result = pause_port();
+        break;
+      case HW_CTL_RESUME:
+        elka_ack.result = resume_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
+        return MSG_FAILED;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
+  }
+
+  return msg_id.type;
 }
 
 uint8_t elka::GroundPort::parse_elka_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  elka_ack.msg_num = elka_msg.msg_num;
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
   
+  elka_ack.msg_num = elka_msg.msg_num;
+  elka_ack.num_retries = elka_msg.num_retries;
+
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  uint8_t nxt_state = elka_msg.data[0];
-  switch (nxt_state) {
-    case STATE_START:
-      if (!start_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
+  if (request) {
+    switch (action) {
+      case SW_CTL_REMOTE:
+        elka_ack.result = remote_ctl_port();
+        break;
+      case SW_CTL_AUTOPILOT:
+        elka_ack.result = autopilot_ctl_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
         return MSG_FAILED;
-      }
-      break;
-    case STATE_STOP:
-      if (!stop_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    case STATE_PAUSE:
-      if (!pause_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    case STATE_RESUME:
-      if (!resume_port()) {
-        elka_ack.result = elka_msg_ack_s::ACK_FAILED;
-        return MSG_FAILED;
-      }
-      break;
-    default:
-      elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
-      return MSG_FAILED;
-      break;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
   }
-
-  elka_ack.result = elka_msg_ack_s::ACK_ACCEPTED;
-
   return msg_id.type;
 }
 
@@ -353,73 +414,53 @@ uint8_t elka::GroundPort::parse_elka_ctl(elka_msg_s &elka_msg,
 // Check ack with respect to port number from elka_ack.msg_id
 uint8_t elka::GroundPort::check_ack(struct elka_msg_ack_s &elka_ack) {
   elka::SerialBuffer *sb;
-  struct elka_msg_id_s msg_id;
+  struct elka_msg_id_s ack_id;
   uint8_t ret;
 
-  get_elka_msg_id_attr(&msg_id, elka_ack.msg_id);
+  get_elka_msg_id_attr(&ack_id, elka_ack.msg_id);
 
   // Check that ack is meant for this device
-  if (!cmp_dev_id_t(msg_id.rcv_id, _id)) {
-    return elka_msg_ack_s::ACK_NULL;
+  if (cmp_dev_id_t(ack_id.rcv_id, _id)) {
+    return MSG_NULL;
   } else {
     sb = _tx_buf;
   }
  
   // First check if message number has recently been acked
   // If message has recently been acked then
-  // return elka_msg_ack_s::ACK_NULL
+  // return MSG_NULL
   // Else then check if message exists in buffer
   //    If message exists, then return check_elka_ack(...)
   //        Then add message number to list of recently acked messages
   //        Then remove message from buffer
-  //    Else return elka_msg_ack_s::ACK_NULL
+  //    Else return MSG_NULL
   if ((ret = sb->check_recent_acks(elka_ack.msg_num)) !=
-              elka_msg_ack_s::ACK_NULL) {
+              MSG_NULL) {
+    msg_id_t erase_msg_id;
     ElkaBufferMsg *ebm;
+   
     if ((ebm = sb->get_buffer_msg(
-            elka_ack.msg_id, elka_ack.msg_num, false))) {
+            ack_id.rcv_id, ack_id.snd_id, elka_ack.msg_num))) {
       if ( (ret = check_elka_ack(elka_ack,
                   ebm->_msg_id,
                   ebm->_rmv_msg_num,
                   ebm->_num_retries)) ==
-           elka_msg_ack_s::ACK_FAILED) {
-        LOG_WARN("Ack failed msg_id %" PRMIT " msg_num %d. %d retries",
+           MSG_FAILED) {
+        LOG_WARN("Ack failed msg_id %" PRMIT "msg_num %" PRIu16
+". %d retries",
             ebm->_msg_id, ebm->_rmv_msg_num,
             ebm->_num_retries);
-      } else if (ret != elka_msg_ack_s::ACK_NULL) {
+      } else if (ret != MSG_NULL) {
         // Message received and processed fine, so erase it
-        LOG_INFO("erasing message");
-        sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num, false);
+        erase_msg_id = ebm->_msg_id;
+        //sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num);
+        sb->erase_msg(erase_msg_id, elka_ack.msg_num);
         sb->push_recent_acks(elka_ack.msg_num);
       }
-    } else {
-      ret = elka_msg_ack_s::ACK_NULL;
     }
   }
 
   return ret;
-}
-
-uint8_t elka::GroundPort::get_state() {
-  return _state;
-}
-
-uint8_t elka::GroundPort::set_dev_state_msg(
-    elka_msg_s &elka_snd,
-    dev_id_t rcv_id,
-    uint8_t state,
-    bool elka_ctl) {
-  uint8_t msg_t;
-  if (elka_ctl) {
-    msg_t = MSG_ELKA_CTL;
-  } else {
-    msg_t = MSG_PORT_CTL;
-  }
-
-  set_state_msg(elka_snd, state,
-                _id, rcv_id,
-                _snd_params, msg_t, 1);
-  return state;
 }
 
 void elka::GroundPort::update_time() {
@@ -441,14 +482,17 @@ void elka::GroundPort::wait_for_child(Child *child) {
 	}
 }
 
-int elka::GroundPort::deinit() {
+int elka::GroundPort::deinitialize() {
   _routing_table.clear();
   stop_port();
   return ELKA_OK;
 }
 
-bool elka::GroundPort::start_port() {
-  _state = STATE_START;
+uint8_t elka::GroundPort::start_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_START;
+  _prev_hw_state = tmp_state;
 
   //FIXME determine client or server programattically
   // For client
@@ -469,234 +513,57 @@ bool elka::GroundPort::start_port() {
       _rx_buf);
   */
 
-  resume_port();
-
-  return true;
+  return resume_port();
 }
 
-bool elka::GroundPort::stop_port() {
-  _state = STATE_STOP;
+uint8_t elka::GroundPort::stop_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_STOP;
+  _prev_hw_state = tmp_state;
   
   //wait_for_child(&_inet_proc);
 
-  return true;
+  return MSG_ACCEPTED;
 }
 
-bool elka::GroundPort::pause_port() {
-  _state = STATE_PAUSE;
-  return true;
+uint8_t elka::GroundPort::pause_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_PAUSE;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
 }
 
-bool elka::GroundPort::resume_port() {
-  _state = STATE_RESUME;
-  return true;
+uint8_t elka::GroundPort::resume_port() {
+  uint8_t tmp_state = _hw_state;
+  
+  _hw_state = HW_CTL_RESUME;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
 }
 
-#if defined(__ELKA_UBUNTU) 
+uint8_t elka::GroundPort::remote_ctl_port() {
+  uint8_t tmp_state = _sw_state;
 
-/*
-// Define device properties type
-typedef uint8_t dev_prop_t;
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_REMOTE;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
 
-// Define msg_id type
-typedef uint64_t msg_id_t;
-*/
+  return MSG_ACCEPTED;
 
-#include <pybind11/pytypes.h>
-#include <pybind11/stl.h>
-
-//TODO Define dev_id_t, dev_prop_t, msg_id_t.
-//     They are returns or inputs to useful functions,
-//     so it is necessary to have access to their conversions
-
-//NOTE Important! Must define custom type casters in every
-//     compilation unit of the Python extension module!
-//     Otherwise, undefined behavior can ensue.
-namespace pybind11 { namespace detail {
-	template <> struct type_caster<dev_id_t> {
-	public:
-		/**
-		 * This macro establishes the name 'dev_id_t' in
-		 * function signatures
-		 */
-		PYBIND11_TYPE_CASTER(dev_id_t, _("dev_id_t"));
-
-		/**
-		 * Conversion part 1 (Python->C++): convert a PyObject into a dev_id_t 
-		 * instance or return false upon failure. The second argument
-		 * indicates whether implicit conversions should be applied.
-		 */
-		bool load(handle src, bool) {
-			/* Extract PyObject from handle */
-			PyObject *source = src.ptr();
-			/* Try converting into a Python integer value */
-			PyObject *tmp = PyNumber_Long(src.ptr());
-			if (!tmp)
-					return false;
-			/* Now try to convert into a C++ int */
-			value = (dev_id_t)PyInt_AsUnsignedLongMask(tmp);
-			Py_DECREF(tmp);
-			/* Ensure return code was OK (to avoid out-of-range errors etc) */
-			return !(value == -1 && !PyErr_Occurred());
-		}
-
-		/**
-		 * Conversion part 2 (C++ -> Python): convert an dev_id_t instance into
-		 * a Python object. The second and third arguments are used to
-		 * indicate the return value policy and parent object (for
-		 * ``return_value_policy::reference_internal``) and are generally
-		 * ignored by implicit casters.
-		 */
-		static handle cast(dev_id_t src, return_value_policy /* policy */, handle /* parent */) {
-			return PyLong_FromUnsignedLong((unsigned long) src);
-		}
-	};
-
-	template <> struct type_caster<dev_prop_t> {
-	public:
-		/**
-		 * This macro establishes the name 'dev_prop_t' in
-		 * function signatures
-		 */
-		PYBIND11_TYPE_CASTER(dev_prop_t, _("dev_prop_t"));
-
-		bool load(handle src, bool convert) {
-			PyObject *source = src.ptr();
-			PyObject *tmp = PyNumber_Long(src.ptr());
-			if (!tmp)
-					return false;
-			value = (dev_prop_t)PyInt_AsUnsignedLongMask(tmp);
-			Py_DECREF(tmp);
-			return !(value == -1 && !PyErr_Occurred());
-		}
-
-		static handle cast(dev_prop_t src, return_value_policy /* policy */, handle /* parent */) {
-			return PyLong_FromUnsignedLong((unsigned long) src);
-		}
-	};
-
-	template <> struct type_caster<msg_id_t> {
-	public:
-		/**
-		 * This macro establishes the name 'msg_id_t' in
-		 * function signatures
-		 */
-		PYBIND11_TYPE_CASTER(msg_id_t, _("msg_id_t"));
-
-		bool load(handle src, bool convert) {
-			/* Extract PyObject from handle */
-			PyObject *source = src.ptr();
-			PyObject *tmp = PyNumber_Long(src.ptr());
-			if (!tmp)
-					return false;
-			value = (msg_id_t)PyInt_AsUnsignedLongLongMask(tmp);
-			
-			return !(value == -1 && !PyErr_Occurred());
-		}
-
-		static handle cast(msg_id_t src, return_value_policy /* policy */, handle /* parent */) {
-			return PyLong_FromUnsignedLongLong((unsigned long long) src);
-		}
-	};
-
-		/**
-	template <> struct type_caster<elka_msg_s> {
-	public:
-		 * This macro establishes the name 'elka_msg_s' in
-		 * function signatures and declares local variables
-		 *	uint64 msg_id
-		 *	uint16 msg_num
-		 *	uint8 num_retries
-		 *	uint8[256] data
-		PYBIND11_TYPE_CASTER(elka_msg_s, _("elka_msg_s"));
-
-		bool load(handle src, bool convert) {
-			if (!src)
-				return false;
-			if (src.is_none()) {
-				value = {};
-				return true;
-			}
-	
-			tuple args(src, true);
-			if (args.check()) {
-				if (len(args) < 4)
-					return false;
-				uint8_t len;
-				value.msg_id = args[0].cast<unsigned long long>();
-				value.msg_num = args[1].cast<unsigned int>();
-				value.num_retries = args[2].cast<unsigned int>();
-
-				get_elka_msg_id_attr(NULL,NULL,NULL,NULL, &len,
-														 value.msg_id);
-
-				//memcpy(value.data, args[3].cast<uint8_t*>(), len);
-				return true;
-			}
-
-			return caster.load(src, convert);
-		}
-
-		static handle cast(const elka_msg_s &src,
-											 return_value_policy policy,
-											 handle parent) {
-			return type_caster_base<elka_msg_s>::cast(&src, policy, parent);
-		}
-
-	private:
-		type_caster_generic caster = typeid(elka_msg_s);
-
-	};
-		 */
-
-}} // namespace pybind11::detail
-
-PYBIND11_MODULE(elka_comm__gnd_station, m) {
-
-	py::class_<elka::GroundPort,
-						 elka::PyGroundPort<>>(m, "GroundPort")
-		.def_readwrite("_elka_snd", &elka::GroundPort::_elka_snd)
-		.def_readwrite("_elka_rcv", &elka::GroundPort::_elka_rcv)
-		.def_readwrite("_elka_rcv_cmd",
-									 &elka::GroundPort::_elka_rcv_cmd)
-		.def_readwrite("_elka_ack_snd",
-									 &elka::GroundPort::_elka_ack_snd)
-		.def_readwrite("_elka_ack_rcv",
-									 &elka::GroundPort::_elka_ack_rcv)
-		.def("__init__", 
-				 [](elka::GroundPort &gp,
-						uint8_t port_num, uint8_t port_type,
-						uint8_t buf_type, uint8_t size, char *dev_name) {
-						new (&gp) elka::PyGroundPort<>(
-												port_num, port_type,
-											  buf_type, size, dev_name);
-				 })
-		.def("add_msg", &elka::GroundPort::add_msg)
-		.def("send_msg",
-				 (uint8_t (elka::GroundPort::*)
-									(elka_msg_s &))
-									&elka::GroundPort::send_msg,
-				 "Send elka message")
-		.def("send_msg",
-				 (uint8_t (elka::GroundPort::*)
-									(elka_msg_ack_s &))
-									&elka::GroundPort::send_msg,
-				 "Send elka ack message")
-		.def("parse_elka_msg", &elka::GroundPort::parse_elka_msg)
-		.def("check_ack", &elka::GroundPort::check_ack)
-		.def("get_state", &elka::GroundPort::get_state)
-		.def("set_dev_state_msg",
-				 &elka::GroundPort::set_dev_state_msg)
-		.def("update_time",
-				 &elka::GroundPort::update_time)
-		.def("start_port",
-				 &elka::GroundPort::start_port)
-		.def("stop_port",
-				 &elka::GroundPort::stop_port)
-		.def("pause_port",
-				 &elka::GroundPort::pause_port)
-		.def("resume_port",
-				 &elka::GroundPort::resume_port);
 }
 
-#endif
+uint8_t elka::GroundPort::autopilot_ctl_port() {
+  uint8_t tmp_state = _sw_state;
+  
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_AUTOPILOT;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
+
+  return MSG_ACCEPTED;
+}

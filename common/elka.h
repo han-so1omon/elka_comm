@@ -18,11 +18,6 @@
 #include <drivers/drv_hrt.h>
 #include <platforms/px4_time.h>
 
-#elif defined(__ELKA_UBUNTU)
-
-#include <pybind11/pybind11.h>
-
-namespace py = pybind11;
 #endif
 
 //FIXME copy `random` methods from <drivers/bootloaders/include/random.h>

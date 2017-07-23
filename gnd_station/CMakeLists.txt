@@ -2,6 +2,7 @@ if(${OS} STREQUAL "ubuntu")
 
 pybind11_add_module(elka_comm__gnd_station
 	MODULE
+	pyelka_gnd_station.cpp
   elka_devices.cpp
   inet_comm.cpp
 )
