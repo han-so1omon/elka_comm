@@ -115,8 +115,8 @@ elka::SerialBuffer::~SerialBuffer() {
 uint8_t elka::SerialBuffer::check_recent_acks(uint16_t msg_num) {
   int idx = cb_bin_search(msg_num, _recent_acks,
     _recent_acks_end, _recent_acks_len, RECENT_ACKS_LEN);
-  if (idx < 0) return elka_msg_ack_s::ACK_FAILED;
-  else return elka_msg_ack_s::ACK_NULL;
+  if (idx < 0) return MSG_FAILED;
+  else return MSG_NULL;
 }
 
 void elka::SerialBuffer::push_recent_acks(uint16_t msg_num) {
@@ -592,11 +592,25 @@ elka::CommPort::CommPort(uint8_t port_n, uint8_t port_t,
   _tx_buf = new SerialBuffer(_id,buf_t,size);
   _rx_buf = new SerialBuffer(_id,buf_t,size);
 
-  _state = STATE_STOP;
+  _hw_state = HW_CTL_STOP;
+  _sw_state = SW_CTL_NULL;
+
+  _prev_hw_state = HW_CTL_NULL;
+  _prev_sw_state = SW_CTL_NULL;
+
+  // Set spektrum killswitch to channel 5 (back left)
+  _spektrum_channel_kill = 4;
+  // Set spektrum switch (switch to spektrum) to channel 6
+  _spektrum_channel_switch = 5;
 
 }
 
 elka::CommPort::~CommPort() {
+}
+
+uint8_t elka::CommPort::get_state(bool hw) {
+  if (hw) return _hw_state;
+  else return _sw_state;
 }
 
 /*
@@ -883,7 +897,7 @@ uint8_t elka::CommPort::parse_routing_msg(
         _snd_params,
         MSG_ACK, MSG_ACK_LENGTH);
 
-    elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
+    elka_ack.result = MSG_UNSUPPORTED;
 
     // Set and push response message if requested
     if (req_resp) {
@@ -960,7 +974,7 @@ uint8_t elka::CommPort::parse_routing_msg(
         _snd_params,
         MSG_ACK, MSG_ACK_LENGTH);
 
-    elka_ack.result = elka_msg_ack_s::ACK_ACCEPTED;
+    elka_ack.result = MSG_ACCEPTED;
     
     // Set and push response message if requested
     if (req_resp) {
@@ -1335,4 +1349,145 @@ void elka::CommPort::print_routing_table(
     elka::DeviceRoute::print_dev_props(
         it_route_table->second._props);
   }
+}
+
+void elka::CommPort::print_elka_ctl_msg(elka_msg_s &elka_msg) {
+  char msg_type_name[42], request[42], state[42];
+  uint8_t msg_type;
+
+  get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
+      elka_msg.msg_id);
+  
+  PX4_INFO("-----ELKA ctl message-----\n\
+# %" PRIu16 ", retries: %" PRIu16 "",
+           elka_msg.msg_num, elka_msg.num_retries);
+  print_elka_msg_id(elka_msg.msg_id);
+
+  switch(msg_type) {
+    case MSG_PORT_CTL:
+      sprintf(msg_type_name, "PORT_CTL");
+
+        switch(elka_msg.data[1]) {
+          case HW_CTL_NULL:
+            sprintf(state, "NULL");
+            break;
+          case HW_CTL_FAILED:
+            sprintf(state, "FAILED");
+            break;
+          case HW_CTL_START:
+            sprintf(state, "START");
+            break;
+          case HW_CTL_STOP:
+            sprintf(state, "STOP");
+            break;
+          case HW_CTL_PAUSE:
+            sprintf(state, "PAUSE");
+            break;
+          case HW_CTL_RESUME:
+            sprintf(state, "RESUME");
+            break;
+          default:
+            break;
+        }
+
+      break;
+    case MSG_ELKA_CTL:
+      sprintf(msg_type_name, "ELKA_CTL");
+
+        switch(elka_msg.data[1]) {
+          case SW_CTL_NULL:
+            sprintf(state, "NULL");
+            break;
+          case SW_CTL_FAILED:
+            sprintf(state, "FAILED");
+            break;
+          case SW_CTL_REMOTE:
+            sprintf(state, "REMOTE");
+            break;
+          case SW_CTL_SPEKTRUM:
+            sprintf(state, "SPEKTRUM");
+            break;
+          case SW_CTL_AUTOPILOT:
+            sprintf(state, "AUTOPILOT");
+            break;
+          default:
+            break;
+        }
+
+      break;
+    default:
+      PX4_INFO("------Not control message type-------");
+      return;
+      break;
+  }
+
+  switch(elka_msg.data[0]) {
+    case true:
+      sprintf(request, "request");
+      break;
+    case false:
+      sprintf(request, "statement");
+      break;
+    default:
+      break;
+  }
+
+  PX4_INFO("%s %s %s", msg_type_name, request, state);
+
+  PX4_INFO("----- End ctl message\n");
+}
+
+void elka::CommPort::print_elka_state() {
+  char hw_state[42], sw_state[42];
+  switch(_hw_state) {
+     case HW_CTL_NULL:
+      sprintf(hw_state, "NULL");
+      break;
+    case HW_CTL_FAILED:
+      sprintf(hw_state, "FAILED");
+      break;
+    case HW_CTL_KILL:
+      sprintf(hw_state, "KILL");
+      break;
+    case HW_CTL_START:
+      sprintf(hw_state, "START");
+      break;
+    case HW_CTL_STOP:
+      sprintf(hw_state, "STOP");
+      break;
+    case HW_CTL_PAUSE:
+      sprintf(hw_state, "PAUSE");
+      break;
+    case HW_CTL_RESUME:
+      sprintf(hw_state, "RESUME");
+      break;
+    default:
+      break;
+  }
+
+  switch(_sw_state) {
+    case SW_CTL_NULL:
+      sprintf(sw_state, "NULL");
+      break;
+    case SW_CTL_FAILED:
+      sprintf(sw_state, "FAILED");
+      break;
+    case SW_CTL_KILL:
+      sprintf(sw_state, "KILL");
+      break;
+    case SW_CTL_REMOTE:
+      sprintf(sw_state, "REMOTE");
+      break;
+    case SW_CTL_SPEKTRUM:
+      sprintf(sw_state, "SPEKTRUM");
+      break;
+    case SW_CTL_AUTOPILOT:
+      sprintf(sw_state, "AUTOPILOT");
+      break;
+    default:
+      break;
+  }
+
+  PX4_INFO("ELKA HW state: %s\tSW state: %s",
+      hw_state, sw_state);
 }

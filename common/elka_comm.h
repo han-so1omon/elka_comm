@@ -27,6 +27,8 @@ struct elka::ElkaBufferMsg {
   uint8_t _data[MAX_MSG_LEN];
   uint8_t _num_retries;
   bool _expecting_ack;
+  // Spektrum killswitch number from
+  //  1-input_rc_s::RC_INPUT_MAX_CHANNELS
   ElkaBufferMsg();
   /*
   ElkaBufferMsg(elka_msg_s &msg);
@@ -227,20 +229,33 @@ struct elka::CommPort {
   struct elka::SerialBuffer *_rx_buf;
   uint8_t _port_num;
   dev_id_t _id;
+  uint8_t _spektrum_channel_kill; 
+  uint8_t _spektrum_channel_switch; 
 
   // _id is included in _routing_table
   std::map<dev_id_t, DeviceRoute, dev_id_tCmp> _routing_table;
   uint8_t _snd_params;
-  uint8_t _state;
+  // Hardware and software states
+  uint8_t _hw_state, _sw_state, _prev_hw_state, _prev_sw_state;
   CommPort(uint8_t port_n, uint8_t port_t, uint8_t buf_type,
       uint8_t size);
   // virtual destructor so that derived class destructor is called.
   virtual ~CommPort(); 
-  virtual bool start_port() = 0;
-  virtual bool stop_port() = 0;
-  virtual bool pause_port() = 0;
-  virtual bool resume_port() = 0;
+
+  // HW_CTL function
+  virtual uint8_t start_port() = 0;
+  virtual uint8_t stop_port() = 0;
+  virtual uint8_t pause_port() = 0;
+  virtual uint8_t resume_port() = 0;
   
+  // SW_CTL functions
+  virtual uint8_t remote_ctl_port() = 0;
+  virtual uint8_t autopilot_ctl_port() = 0;
+  
+  // Get state of internal state machine
+  // @return elka state defined by ELKA_CTL_<state>
+  uint8_t get_state(bool hw);
+
   //TODO add push_msg(msg_id_t msg_id, uint8_t *data, bool tx)  overload
   //     so that elka_msg_s doesn't need to be formed each time from
   //     send_msg()
@@ -403,6 +418,8 @@ struct elka::CommPort {
   static void print_elka_route_msg(elka_msg_s &elka_msg);
   static void print_routing_table(
       std::map<dev_id_t,DeviceRoute, dev_id_tCmp> &routing_table);
+  static void print_elka_ctl_msg(elka_msg_s &elka_msg);
+  void print_elka_state();
 };
 
 #endif
