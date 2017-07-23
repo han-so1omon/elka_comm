@@ -72,6 +72,8 @@ public:
   
   // End serial methods ------------------------------
 
+  uint8_t parse_spektrum_msg(input_rc_s input_rc);
+
   // Add message to buffer
   // Adds message to buffer for all applicable
   // devices unless target_dev is specified
@@ -117,11 +119,17 @@ public:
   void update_time();
 
 private:
+ 
+  uint8_t start_port() override;
+  uint8_t stop_port() override;
+  uint8_t pause_port() override;
+  uint8_t resume_port() override;
 
-  bool start_port() override;
-  bool stop_port() override;
-  bool pause_port() override;
-  bool resume_port() override;
+  uint8_t remote_ctl_port() override;
+  uint8_t autopilot_ctl_port() override;
+  uint8_t spektrum_ctl_port(bool kill,
+                            bool switch_to_spektrum);
+
 
   // Data members
   static UARTPort *_instance; // Singleton port instance

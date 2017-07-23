@@ -90,10 +90,6 @@ public:
   // Check ack with respect to port number from elka_ack.msg_id
   uint8_t check_ack(struct elka_msg_ack_s &elka_ack);
 
-  // Get state of internal state machine
-  // @return elka state defined by ELKA_CTL_<state>
-  uint8_t get_state();
-  
   // Set elka state in elka_msg. May push this to a buffer after
   uint8_t set_dev_state_msg(
       elka_msg_s &elka_snd,
@@ -106,10 +102,13 @@ public:
 
 private:
   
-  bool start_port() override;
-  bool stop_port() override;
-  bool pause_port() override;
-  bool resume_port() override;
+  uint8_t start_port() override;
+  uint8_t stop_port() override;
+  uint8_t pause_port() override;
+  uint8_t resume_port() override;
+
+  uint8_t remote_ctl_port() override;
+  uint8_t autopilot_ctl_port() override;
 
   /*
   // Map from port id to port num

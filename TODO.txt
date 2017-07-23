@@ -1,0 +1,27 @@
+State changes
+
+Stream data from ELKA to GUI
+
+Control with Spektrum controller
+
+Autonomous hover
+
+Simple flight pattern
+
+Stream video feed
+
+Display on GUI as graph node
+
+Heartbeat messages
+
+Route discovery
+
+Merge device classes into one class
+
+WiFi connectivity
+
+Bluetooth connectivity
+
+Radio TRX connectivity
+
+Simple hover multiple drones

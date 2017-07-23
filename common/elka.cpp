@@ -199,12 +199,12 @@ uint8_t check_elka_ack(struct elka_msg_ack_s &elka_msg_ack,
       LOG_INFO("elka ack msg num: %d\nmsg num: %d",
           elka_msg_ack.msg_num, msg_num);
       LOG_ERR("Ack message specified incorrectly");
-      return elka_msg_ack_s::ACK_FAILED;
+      return MSG_FAILED;
     } else {
       return elka_msg_ack.result;
     }
   } else { // msg not for u
-    return elka_msg_ack_s::ACK_NULL;
+    return MSG_NULL;
   }
 }
 

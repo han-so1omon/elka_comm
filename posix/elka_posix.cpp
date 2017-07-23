@@ -300,8 +300,8 @@ int elka_rx_loop(int argc, char **argv) {
 int elka_parse_loop(int argc, char **argv) {
   thread_running[1] = true;
 
-  int debug_length = 12;
-  uint8_t debug_data[MAX_MSG_LEN+1] = {0,1,3,1,0,1,3,1,0,1,3,1};
+  int debug_length = 2;
+  uint8_t debug_data[MAX_MSG_LEN+1] = {1, SW_CTL_REMOTE};
 
   // Determines result of parsing previous message.
   // If MSG_NULL, then don't send ack.
@@ -356,21 +356,22 @@ int elka_parse_loop(int argc, char **argv) {
       }
     }
 
-    //FIXME debugging
-    debug_data[6] = dbg++;
 
-    if (elka_dev->get_state() == STATE_RESUME) {
+    if (elka_dev->get_state(true) == HW_CTL_RESUME) {
       // For debugging, alternate between sending port msg
       // and motor_cmd
       // TODO routing
+      dbg++;
       if ((dbg/2) % 2) {
-        elka_dev->add_msg(MSG_PORT_CTL,
+        debug_data[1] = SW_CTL_AUTOPILOT;
+        elka_dev->add_msg(MSG_ELKA_CTL,
                 debug_length,
                 0,
                 0,
                 debug_data,
                 NULL);
       } else {
+        debug_data[1] = SW_CTL_REMOTE;
         elka_dev->add_msg(MSG_ELKA_CTL,
                 debug_length,
                 0,
