@@ -189,17 +189,10 @@ uint8_t elka::GroundPort::send_msg(elka_msg_s &elka_msg) {
               &elka_msg);
 
   // write to socket 
-  /*  
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
-      CLIENT);
-
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      SERVER);
-  */
+      _inet_role);
 
   return msg_type;
 }
@@ -214,18 +207,11 @@ uint8_t elka::GroundPort::send_msg(elka_msg_ack_s &elka_msg) {
               &elka_msg);
 
   // write to socket 
-  /*  
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
-      CLIENT);
-
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      SERVER);
-  */
-
+      _inet_role);
+  
   return msg_type;
 }
 
@@ -496,7 +482,7 @@ uint8_t elka::GroundPort::start_port() {
 
   //FIXME determine client or server programattically
   // For client
-  /*
+  _inet_role = CLIENT;
   socket_proc_start(
       &_inet_proc,
       "192.168.1.1",
@@ -504,7 +490,9 @@ uint8_t elka::GroundPort::start_port() {
       _tx_buf,
       _rx_buf);
   
+  /*
   // For server
+  _inet_role = SERVER;
   socket_proc_start(
       &_inet_proc,
       NULL,
