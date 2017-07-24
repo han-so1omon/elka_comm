@@ -122,6 +122,7 @@ private:
   // This must be updated frequently thru callback or otherwise!
   hrt_abstime _now;
   char _dev_name[MAX_NAME_LEN];
+  uint8_t _inet_role;
   Child _inet_proc;
 
   void wait_for_child(Child *child);

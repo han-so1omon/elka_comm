@@ -197,12 +197,12 @@ uint8_t elka::PX4Port::send_msg(elka_msg_s &elka_msg) {
       _inet_proc.pid,
       elka_msg,
       CLIENT);
+  */
 
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
-      SERVER);
-  */
+      _inet_role);
 
   return msg_type;
 }
@@ -222,12 +222,12 @@ uint8_t elka::PX4Port::send_msg(elka_msg_ack_s &elka_msg) {
       _inet_proc.pid,
       elka_msg,
       CLIENT);
+  */
 
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
-      SERVER);
-  */
+      _inet_role);
 
   return msg_type;
 }
@@ -500,21 +500,23 @@ uint8_t elka::PX4Port::start_port() {
   //FIXME determine client or server programattically
   // For client
   /*
+  _inet_role = client
   socket_proc_start(
       &_inet_proc,
       "192.168.1.1",
       CLIENT,
       _tx_buf,
       _rx_buf);
+  */
   
   // For server
+  _inet_role = SERVER;
   socket_proc_start(
       &_inet_proc,
       NULL,
-      SERVER,
+      _inet_role,
       _tx_buf,
       _rx_buf);
-  */
 
   return resume_port();
 }
@@ -525,7 +527,7 @@ uint8_t elka::PX4Port::stop_port() {
   _hw_state = HW_CTL_STOP;
   _prev_hw_state = tmp_state;
   
-  //wait_for_child(&_inet_proc);
+  wait_for_child(&_inet_proc);
 
   return MSG_ACCEPTED;
 }
