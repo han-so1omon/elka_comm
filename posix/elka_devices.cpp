@@ -192,13 +192,6 @@ uint8_t elka::PX4Port::send_msg(elka_msg_s &elka_msg) {
               &elka_msg);
 
   // write to socket 
-  /*  
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      CLIENT);
-  */
-
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
@@ -217,13 +210,6 @@ uint8_t elka::PX4Port::send_msg(elka_msg_ack_s &elka_msg) {
               &elka_msg);
 
   // write to socket 
-  /*  
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      CLIENT);
-  */
-
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
