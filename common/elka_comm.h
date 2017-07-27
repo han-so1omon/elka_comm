@@ -268,8 +268,8 @@ struct elka::CommPort {
   //         MSG_NULL if msg not meant for u in the case of tx=false
   //         MSG_FAILED if msg meant for u and incorrect
   //                    if msg is not pushed correctly
-  uint8_t push_msg(dev_id_t &dst, uint8_t msg_type,
-                   uint8_t len, uint8_t *data);
+  //uint8_t push_msg(dev_id_t &dst, uint8_t msg_type,
+  //                 uint8_t len, uint8_t *data);
   uint8_t push_msg(elka_msg_s &elka_msg, bool tx);
   uint8_t push_msg(elka_msg_ack_s &elka_msg, bool tx);
 
@@ -304,7 +304,6 @@ struct elka::CommPort {
   // @param tx = true if sending message
   //             false if receiving message
   void erase_msg(msg_id_t msg_id, uint16_t msg_num, bool tx);
-
 
   //FIXME currently depends on dev_id_t being 2B
   //FIXME currently depends on dev_prop_t being 1B

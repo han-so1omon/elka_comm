@@ -18,10 +18,12 @@ elka::GroundPort::GroundPort(uint8_t port_num, uint8_t port_type,
   memset(&_elka_rcv_cmd, 0, sizeof(_elka_rcv_cmd));
   
   // Advertise attitude topic
+   /*
   _elka_msg_pub = orb_advertise(
       ORB_ID(elka_msg), &_elka_snd);
   _elka_ack_pub = orb_advertise(
       ORB_ID(elka_msg_ack), &_elka_ack_snd);
+      */
   
   //orb_advert_t elka_msg_pub = orb_advertise(
   //    ORB_ID(elka_msg), NULL);
@@ -158,9 +160,9 @@ uint8_t elka::GroundPort::set_dev_state_msg(
     elka_msg_s &elka_snd,
     dev_id_t rcv_id,
     uint8_t state,
-    bool elka_ctl) {
+    bool hw) {
   uint8_t msg_t;
-  if (elka_ctl) {
+  if (hw) {
     msg_t = MSG_ELKA_CTL;
   } else {
     msg_t = MSG_PORT_CTL;
@@ -184,9 +186,11 @@ uint8_t elka::GroundPort::send_msg(elka_msg_s &elka_msg) {
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
 
+  /*
   orb_publish(ORB_ID(elka_msg),
               _elka_msg_pub,
               &elka_msg);
+              */
 
   // write to socket 
   socket_write_elka_msg(
@@ -202,9 +206,11 @@ uint8_t elka::GroundPort::send_msg(elka_msg_ack_s &elka_msg) {
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
 
+  /*
   orb_publish(ORB_ID(elka_msg_ack),
               _elka_ack_pub,
               &elka_msg);
+              */
 
   // write to socket 
   socket_write_elka_msg(

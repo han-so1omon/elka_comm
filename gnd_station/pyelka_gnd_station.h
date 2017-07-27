@@ -7,15 +7,16 @@
 // Python bindings for pybind11
 #if defined(__ELKA_UBUNTU)
 
+#include <pybind11/pybind11.h>
 #include <common/pyelka_common.h>
  
 namespace elka {
 
-// Trampoline class for CommPort. Defined to override virtual
+// Trampoline class for GroundPort. Defined to override virtual
 // methods
 template <class GroundPortBase = GroundPort> struct PyGroundPort : public PyCommPort<GroundPortBase> {
 
-	// Inherent constructors
+	// Inherit constructors
 	using PyCommPort<GroundPortBase>::PyCommPort;
 
   uint8_t start_port() override {

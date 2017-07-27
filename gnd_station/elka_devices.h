@@ -34,8 +34,10 @@ public:
                     _elka_rcv,
                     _elka_rcv_cmd;
 
+  /*
   orb_advert_t _elka_msg_pub;
   orb_advert_t _elka_ack_pub;
+  */
 
   GroundPort(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t size, char *dev_name);
@@ -93,7 +95,7 @@ public:
       elka_msg_s &elka_snd,
       dev_id_t rcv_id,
       uint8_t state,
-      bool elka_ctl);
+      bool hw);
 
   // Update _now variable with current time
   void update_time();

@@ -1,9 +1,12 @@
 #if defined(__ELKA_UBUNTU) 
 
 #include <common/pyelka_common.h>
+#include <gnd_station/pyelka_gnd_station.h>
 
 #include <pybind11/pytypes.h>
 #include <pybind11/stl.h>
+
+namespace py = pybind11;
 
 //TODO Define dev_id_t, dev_prop_t, msg_id_t.
 //     They are returns or inputs to useful functions,
@@ -170,7 +173,7 @@ PYBIND11_MAKE_OPAQUE(DevIdVector);
 PYBIND11_MAKE_OPAQUE(DevPropVector);
 PYBIND11_MAKE_OPAQUE(RouteMap);
 
-PYBIND11_MODULE(elka_comm__common, m) {
+PYBIND11_MODULE(elka_comm, m) {
 	m.def("cmp_dev_id_t", &cmp_dev_id_t);
 
 	py::class_<DevIdVector>(m, "DevIdVector")
@@ -260,17 +263,24 @@ PYBIND11_MODULE(elka_comm__common, m) {
 						elka::DeviceRoute *d2) {
 						new (&d1) elka::DeviceRoute(d2);
 				 })
-		.def("add_prop", &elka::DeviceRoute::add_prop)
-		.def("remove_prop", &elka::DeviceRoute::remove_prop)
-		.def("check_prop", &elka::DeviceRoute::check_prop)
+		.def("add_prop", &elka::DeviceRoute::add_prop,
+         py::arg("prop"))
+		.def("remove_prop", &elka::DeviceRoute::remove_prop,
+         py::arg("prop"))
+		.def("check_prop", &elka::DeviceRoute::check_prop,
+         py::arg("prop"))
 		.def("check_alive", &elka::DeviceRoute::check_alive)
-		.def_static("route_cmp", &elka::DeviceRoute::route_cmp)
+		.def_static("route_cmp", &elka::DeviceRoute::route_cmp,
+                py::arg("r1"),py::arg("r2"))
 		.def_static("dev_props_cmp",
-								&elka::DeviceRoute::dev_props_cmp)
+								&elka::DeviceRoute::dev_props_cmp,
+                py::arg("p1"), py::arg("p2"))
 		.def_static("print_dev_props",
-								&elka::DeviceRoute::print_dev_props)
+								&elka::DeviceRoute::print_dev_props,
+                py::arg("props"))
 		.def_static("print_dev_route",
-								&elka::DeviceRoute::print_dev_route);
+								&elka::DeviceRoute::print_dev_route,
+                py::arg("route"));
 
 	py::class_<elka::CommPort, elka::PyCommPort<>> (m, "CommPort")
 		.def_readwrite("_id", &elka::CommPort::_id)
@@ -301,32 +311,51 @@ PYBIND11_MODULE(elka_comm__common, m) {
 			&elka::CommPort::push_msg,
 			"Push elka message by parameters")
 		*/
-    .def("get_state", &elka::CommPort::get_state)
+    .def("get_state", &elka::CommPort::get_state,
+         py::arg("hw"))
 		.def("push_msg",
 				 (uint8_t (elka::CommPort::*)
 									(elka_msg_s &, bool))
 								  &elka::CommPort::push_msg,
+         py::arg("elka_msg"), py::arg("tx"),
 				 "Push elka msg by elka_msg_s")
 		.def("push_msg",
 				 (uint8_t (elka::CommPort::*)
 									(elka_msg_ack_s &, bool))
 								  &elka::CommPort::push_msg,
+         py::arg("elka_msg"), py::arg("tx"),
 				 "Push elka msg by elka_msg_ack_s")
-		.def("get_msg", &elka::CommPort::get_msg)
-		.def("remove_msg", &elka::CommPort::remove_msg)
-		.def("pop_msg", &elka::CommPort::pop_msg)
-    .def("erase_msg", &elka::CommPort::erase_msg)
+		.def("get_msg", &elka::CommPort::get_msg,
+         py::arg("elka_msg"),
+         py::arg("elka_msg_ack"),
+         py::arg("tx"))
+		.def("remove_msg", &elka::CommPort::remove_msg,
+         py::arg("elka_msg"),
+         py::arg("elka_msg_ack"),
+         py::arg("tx"))
+		.def("pop_msg", &elka::CommPort::pop_msg,
+         py::arg("tx"))
+    .def("erase_msg", &elka::CommPort::erase_msg,
+         py::arg("msg_id"), py::arg("msg_num"),
+         py::arg("tx"))
 		.def("parse_routing_msg",
-				 &elka::CommPort::parse_routing_msg)
-		.def("route_cmp", &elka::CommPort::route_cmp)
-		.def("dev_props_cmp", &elka::CommPort::dev_props_cmp)
+				 &elka::CommPort::parse_routing_msg,
+         py::arg("elka_msg"), py::arg("msg_id"),
+         py::arg("elka_ack"), py::arg("ret_routing_msg"))
+		.def("route_cmp", &elka::CommPort::route_cmp,
+         py::arg("d"), py::arg("r1"))
+		.def("dev_props_cmp", &elka::CommPort::dev_props_cmp,
+         py::arg("d"), py::arg("p1"))
 		.def("check_route_contains",
-				 &elka::CommPort::check_route_contains)
-		.def("check_route", &elka::CommPort::check_route)
+				 &elka::CommPort::check_route_contains,
+         py::arg("dst"), py::arg("el"))
+		.def("check_route", &elka::CommPort::check_route,
+         py::arg("d"))
 		.def("change_route",
 				 (void (elka::CommPort::*)
 							 (dev_id_t &, elka::DeviceRoute *))
 							 &elka::CommPort::change_route,
+         py::arg("dev"), py::arg("dr"),
 				 "Change route with device id and DeviceRoute")
 		.def("change_route",
 				 (void (elka::CommPort::*)
@@ -334,25 +363,35 @@ PYBIND11_MODULE(elka_comm__common, m) {
 								std::vector<dev_id_t> *,
 								std::vector<dev_prop_t> *))
 							 &elka::CommPort::change_route,
+         py::arg("dev"), py::arg("route"), py::arg("props"),
 				 "Change route with device id, device id vector, and\
 device route vector")
-		.def("get_next_dev", &elka::CommPort::get_next_dev)
+		.def("get_next_dev", &elka::CommPort::get_next_dev,
+         py::arg("end"), py::arg("nxt"))
 		.def("set_dev_props_msg",
-    		 &elka::CommPort::set_dev_props_msg)
+    		 &elka::CommPort::set_dev_props_msg,
+         py::arg("snd_id"), py::arg("rcv_id"),
+         py::arg("req_resp"), py::arg("ret_routing_msg"))
 		.def("set_route_changed_msg",
-	  		 &elka::CommPort::set_route_changed_msg)
+	  		 &elka::CommPort::set_route_changed_msg,
+         py::arg("snd_id"), py::arg("rcv_id"),
+         py::arg("req_resp"), py::arg("ret_routing_msg"))
 		.def("set_route_table_msg",
-	  		 &elka::CommPort::set_route_table_msg)
-		.def("set_route_changed_msg",
-	  		 &elka::CommPort::set_route_changed_msg)
+	  		 &elka::CommPort::set_route_table_msg,
+         py::arg("snd_id"), py::arg("rcv_id"),
+         py::arg("req_resp"), py::arg("ret_routing_msg"))
 		.def("check_dev_compatible",
-	  		 &elka::CommPort::check_dev_compatible)
+	  		 &elka::CommPort::check_dev_compatible,
+         py::arg("msg_type"), py::arg("dst"))
 		.def_static("print_elka_route_msg",
-	  		 &elka::CommPort::print_elka_route_msg)
+	  		 &elka::CommPort::print_elka_route_msg,
+         py::arg("elka_msg"))
 		.def_static("print_routing_table",
-	  		 &elka::CommPort::print_routing_table)
+	  		 &elka::CommPort::print_routing_table,
+         py::arg("routing_table"))
     .def_static("print_elka_ctl_msg",
-         &elka::CommPort::print_elka_ctl_msg)
+         &elka::CommPort::print_elka_ctl_msg,
+         py::arg("elka_msg"))
     .def("print_elka_state",
         &elka::CommPort::print_elka_state);
 
@@ -360,6 +399,7 @@ device route vector")
 		.def_readwrite("msg_id", &elka_msg_s::msg_id)
 		.def_readwrite("msg_num", &elka_msg_s::msg_num)
 		.def_readwrite("num_retries", &elka_msg_s::num_retries)
+    .def(py::init<>())
 		.def("get_data", &get_elka_msg_data,
 				 py::return_value_policy::reference);
 
@@ -367,7 +407,82 @@ device route vector")
 		.def_readwrite("msg_id", &elka_msg_ack_s::msg_id)
 		.def_readwrite("msg_num", &elka_msg_ack_s::msg_num)
 		.def_readwrite("num_retries", &elka_msg_ack_s::num_retries)
-		.def_readwrite("result", &elka_msg_ack_s::result);
+		.def_readwrite("result", &elka_msg_ack_s::result)
+    .def(py::init<>());
+
+	py::class_<elka::GroundPort,
+             elka::CommPort,
+						 elka::PyGroundPort<>>(m, "GroundPort")
+		.def_readwrite("_elka_snd", &elka::GroundPort::_elka_snd)
+		.def_readwrite("_elka_rcv", &elka::GroundPort::_elka_rcv)
+		.def_readwrite("_elka_rcv_cmd",
+									 &elka::GroundPort::_elka_rcv_cmd)
+		.def_readwrite("_elka_ack_snd",
+									 &elka::GroundPort::_elka_ack_snd)
+		.def_readwrite("_elka_ack_rcv",
+									 &elka::GroundPort::_elka_ack_rcv)
+		.def("__init__", 
+				 [](elka::GroundPort &gp,
+						uint8_t port_num, uint8_t port_type,
+						uint8_t buf_type, uint8_t size, char *dev_name) {
+						new (&gp) elka::PyGroundPort<>(
+												port_num, port_type,
+											  buf_type, size, dev_name);
+				 })
+    .def_static("initialize", &elka::GroundPort::initialize,
+        py::arg("port_num"), py::arg("port_type"),
+        py::arg("buf_type"), py::arg("queue_sz"),
+        py::arg("dev_name"))
+    .def_static("get_instance", &elka::GroundPort::get_instance,
+				 py::return_value_policy::reference)
+		.def("add_msg", &elka::GroundPort::add_msg,
+         py::arg("msg_type"), py::arg("len"),
+         py::arg("num_retries"), py::arg("msg_num"),
+         py::arg("data"),py::arg("target_dev")) 
+		.def("send_msg",
+				 (uint8_t (elka::GroundPort::*)
+									(elka_msg_s &))
+									&elka::GroundPort::send_msg,
+         py::arg("elka_msg"),
+				 "Send elka message")
+		.def("send_msg",
+				 (uint8_t (elka::GroundPort::*)
+									(elka_msg_ack_s &))
+									&elka::GroundPort::send_msg,
+         py::arg("elka_msg"),
+				 "Send elka ack message")
+		.def("parse_elka_msg",
+          (uint8_t (elka::GroundPort::*)
+                   (elka_msg_s &))
+                &elka::GroundPort::parse_elka_msg,
+         py::arg("elka_msg"))
+		.def("parse_elka_msg",
+          (uint8_t (elka::GroundPort::*)
+                   (elka_msg_ack_s &))
+                &elka::GroundPort::parse_elka_msg,
+         py::arg("elka_msg"))
+		.def("check_ack", &elka::GroundPort::check_ack,
+         py::arg("elka_ack"))
+		//.def("get_state", &elka::GroundPort::get_state)
+		.def("set_dev_state_msg",
+				 &elka::GroundPort::set_dev_state_msg,
+         py::arg("elka_snd"), py::arg("rcv_id"),
+         py::arg("state"), py::arg("hw"))
+		.def("update_time",
+				 &elka::GroundPort::update_time)
+		.def("start_port",
+				 &elka::GroundPort::start_port)
+		.def("stop_port",
+				 &elka::GroundPort::stop_port)
+		.def("pause_port",
+				 &elka::GroundPort::pause_port)
+		.def("resume_port",
+				 &elka::GroundPort::resume_port)
+		.def("remote_ctl_port",
+				 &elka::GroundPort::remote_ctl_port)
+		.def("autopilot_ctl_port",
+				 &elka::GroundPort::autopilot_ctl_port);
+
 }
 
 #endif

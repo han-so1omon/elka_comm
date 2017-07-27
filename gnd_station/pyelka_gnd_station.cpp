@@ -191,7 +191,7 @@ PYBIND11_MODULE(elka_comm__gnd_station, m) {
                    (elka_msg_ack_s &))
                 &elka::GroundPort::parse_elka_msg)
 		.def("check_ack", &elka::GroundPort::check_ack)
-		.def("get_state", &elka::GroundPort::get_state)
+		//.def("get_state", &elka::GroundPort::get_state)
 		.def("set_dev_state_msg",
 				 &elka::GroundPort::set_dev_state_msg)
 		.def("update_time",

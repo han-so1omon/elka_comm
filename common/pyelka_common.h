@@ -9,14 +9,12 @@
 
 #include <pybind11/pybind11.h>
 
-namespace py = pybind11;
- 
 namespace elka {
 
 // Trampoline class for CommPort. Defined to override virtual
 // methods
 template <class CommPortBase = CommPort> struct PyCommPort : public CommPortBase {
-  // Inherent constructors
+  // Inherit constructors
   using CommPortBase::CommPortBase;
 
   uint8_t start_port() override {

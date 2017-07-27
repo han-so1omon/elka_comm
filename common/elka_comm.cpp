@@ -7,6 +7,11 @@
 #include <px4_defines.h>
 #include <px4_log.h>
 
+#elif defined (__ELKA_UBUNTU)
+
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
 #endif
 
 #include <elka_log.h>
@@ -86,6 +91,7 @@ uint8_t elka::ElkaBufferMsg::get_result() {
 
 elka::SerialBuffer::SerialBuffer(dev_id_t port_id,
     uint8_t buf_type, uint16_t size) {
+  _buffer.clear();
   _port_id = port_id;
   _comp = Compare();
   _type = buf_type;
@@ -104,12 +110,17 @@ elka::SerialBuffer::SerialBuffer(dev_id_t port_id,
     errno = EINVAL;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   _buf_mutex = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_init(&_buf_mutex,NULL);
+
+#endif
 }
 
 elka::SerialBuffer::~SerialBuffer() {
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_destroy(&_buf_mutex);
+#endif
 }
 
 uint8_t elka::SerialBuffer::check_recent_acks(uint16_t msg_num) {
@@ -151,8 +162,7 @@ uint8_t elka::SerialBuffer::push_msg(
     uint16_t rmv_msg_num,
     uint8_t num_retries) {
   ElkaBufferMsg *ebm;
-  uint8_t msg_type;
-
+  uint8_t msg_type = MSG_FAILED;
 
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       msg_id);
@@ -165,7 +175,12 @@ uint8_t elka::SerialBuffer::push_msg(
     return msg_type;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   if (_type == ARRAY) {
     _buffer.push_back(ElkaBufferMsg(
@@ -184,12 +199,14 @@ uint8_t elka::SerialBuffer::push_msg(
       std::pop_heap(_buffer.begin(), _buffer.end(), _comp);
       _buffer.pop_back();
     }
-  } else {
-    pthread_mutex_unlock(&_buf_mutex);
-    return MSG_FAILED;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   return msg_type;
 }
@@ -198,7 +215,7 @@ uint8_t elka::SerialBuffer::get_msg(
     elka_msg_s &elka_msg,
     elka_msg_ack_s &elka_msg_ack) {
   dev_id_t snd_id; 
-  uint8_t ret, msg_len, front_msg_type;
+  uint8_t ret=MSG_FAILED, msg_len, front_msg_type;
 
   // Ensure that buffer isn't empty 
   // Pop messages that have been tried too many times
@@ -208,7 +225,12 @@ uint8_t elka::SerialBuffer::get_msg(
     if (_buffer.empty()) return MSG_NULL;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   // Get message type for message at front of buffer
   front_msg_type = buffer_front_type();
@@ -257,7 +279,12 @@ uint8_t elka::SerialBuffer::get_msg(
       */
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   return ret;
 }
@@ -265,9 +292,15 @@ uint8_t elka::SerialBuffer::get_msg(
 //FIXME fix qurt side
 elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
     msg_id_t msg_id, uint16_t msg_num) {
+  elka::ElkaBufferMsg *ebm = nullptr;
 //#if defined(__PX4_QURT)
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   for (std::vector<ElkaBufferMsg>::iterator it =
         _buffer.begin();
@@ -275,13 +308,19 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
     if (msg_num != 0 &&
         it->_rmv_msg_num == msg_num &&
         !cmp_msg_id_t(msg_id, it->_msg_id)) {
-      pthread_mutex_unlock(&_buf_mutex);
-      return &(*it);
+      ebm = &(*it);
+      break;
     }
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
-  return nullptr;
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+
+  return ebm;
 
   /*
 #elif defined(__PX4_POSIX)
@@ -302,8 +341,14 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
     dev_id_t snd_id,
     dev_id_t rcv_id,
     uint16_t msg_num) {
+  elka::ElkaBufferMsg *ebm = nullptr;
   dev_id_t msg_snd_id, msg_rcv_id;
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   for (std::vector<ElkaBufferMsg>::iterator it =
         _buffer.begin();
@@ -317,13 +362,17 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
         it->_rmv_msg_num == msg_num &&
         !cmp_dev_id_t(snd_id, msg_snd_id) &&
         !cmp_dev_id_t(rcv_id, msg_rcv_id)) {
-      pthread_mutex_unlock(&_buf_mutex);
-      return &(*it);
+      ebm = &(*it);
     }
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
-  return nullptr;
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+  return ebm;
 }
 
 // TODO necessary to set time stamps?
@@ -332,7 +381,7 @@ uint8_t elka::SerialBuffer::remove_msg(
     elka_msg_ack_s &elka_msg_ack) {
   msg_id_t msg_id;
   uint16_t msg_num;
-  uint8_t ret;
+  uint8_t ret = MSG_FAILED;
 
   ret = get_msg(elka_msg,elka_msg_ack);
 
@@ -354,7 +403,12 @@ uint8_t elka::SerialBuffer::pop_msg() {
   // Ensure that buffer isn't empty
   if (_buffer.empty()) return MSG_NULL;
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   if (_type == ARRAY) {
     _buffer.erase(_buffer.begin());
@@ -367,7 +421,12 @@ uint8_t elka::SerialBuffer::pop_msg() {
     ret = MSG_FAILED;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   return ret;
 }
@@ -378,7 +437,12 @@ void elka::SerialBuffer::erase_msg(
 //#if defined(__PX4_QURT)
   // Search beginning at end of array bc this should be closer to
   // msg_num in most expected use cases
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
   for (std::vector<ElkaBufferMsg>::reverse_iterator it =
        _buffer.rbegin();
        it != _buffer.rend(); it++) {
@@ -388,7 +452,12 @@ void elka::SerialBuffer::erase_msg(
       break;
     }
   }
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   /*
 #elif defined(__PX4_POSIX)

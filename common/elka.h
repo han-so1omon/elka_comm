@@ -1,3 +1,7 @@
+// Defines using prefix `Py` are specifically for python
+// implementation. The normal defines will not translate to
+// python with h2py.py script.
+// NOTE: Be sure to keep the `Py` defines up to date
 #ifndef ELKA_H
 #define ELKA_H
 
@@ -128,6 +132,7 @@ struct snd_params_s {
 
 // Message is broadcast if receiver id is equal to BROADCAST_MSG_ID
 #define BROADCAST_MSG_ID (dev_id_t)0x00
+#define PyBROADCAST_MSG_ID 0x00
 
 // Define message types for elka_msg, elka_msg_ack, and elka_ctl
 // Odd message types expect ack
@@ -245,6 +250,22 @@ struct snd_params_s {
 #define DEV_PROP_USE_CAMERA (dev_prop_t)0x0b
 #define DEV_PROP_HAS_CAMERA (dev_prop_t)0x0c
 #define DEV_PROP_TRANSMISSION_CTL (dev_prop_t)0x0d
+
+#define PyDEV_PROP_POSIX_SIDE 0x00
+#define PyDEV_PROP_QURT_SIDE 0x01
+#define PyDEV_PROP_ELKA_SIDE 0x02 
+#define PyDEV_PROP_HW_CONNECTED 0x03
+#define PyDEV_PROP_WIRELESS_CONNECTED 0x04
+#define PyDEV_PROP_GROUND_STATION 0x05
+#define PyDEV_PROP_FLIGHT_CONTROLLER 0x06
+#define PyDEV_PROP_PERFORM_LOCALIZATION 0x07
+#define PyDEV_PROP_SENSE_LOCATION 0x08
+#define PyDEV_PROP_SPIN_MOTORS (dev_prop_t)0x09
+#define PyDEV_PROP_HAS_MOTORS 0x0a
+#define PyDEV_PROP_USE_CAMERA 0x0b
+#define PyDEV_PROP_HAS_CAMERA 0x0c
+#define PyDEV_PROP_TRANSMISSION_CTL 0x0d
+
 
 // Define Spektrum DX6 values
 // Spektrum stick values are approximate
