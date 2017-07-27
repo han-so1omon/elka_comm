@@ -192,10 +192,12 @@ uint8_t elka::PX4Port::send_msg(elka_msg_s &elka_msg) {
               &elka_msg);
 
   // write to socket 
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      _inet_role);
+  if (_socket_state == SOCKET_OPEN) {
+    socket_write_elka_msg(
+        _inet_proc.pid,
+        elka_msg,
+        _inet_role);
+  }
 
   return msg_type;
 }
@@ -497,12 +499,13 @@ uint8_t elka::PX4Port::start_port() {
   
   // For server
   _inet_role = SERVER;
-  socket_proc_start(
-      &_inet_proc,
-      NULL,
-      _inet_role,
-      _tx_buf,
-      _rx_buf);
+  _socket_state = socket_proc_start(
+                    &_inet_proc,
+                    NULL,
+                    _inet_role,
+                    &_socket_state,
+                    _tx_buf,
+                    _rx_buf);
 
   return resume_port();
 }

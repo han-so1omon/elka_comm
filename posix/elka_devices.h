@@ -123,6 +123,7 @@ private:
   hrt_abstime _now;
   char _dev_name[MAX_NAME_LEN];
   uint8_t _inet_role;
+  int8_t _socket_state;
   Child _inet_proc;
 
   void wait_for_child(Child *child);

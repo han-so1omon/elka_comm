@@ -233,6 +233,12 @@ struct snd_params_s {
 #define SPEKTRUM_SWITCH_MID 1500
 #define SPEKTRUM_SWITCH_HIGH 1901
 
+// Define socket values
+#define SOCKET_ERROR -1
+#define SOCKET_NULL 0
+#define SOCKET_CLOSED 1
+#define SOCKET_OPEN 2
+
 // Call this in Device instantiation to get device id
 void get_dev_id_t(dev_id_t *d);
 
