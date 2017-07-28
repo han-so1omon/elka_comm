@@ -32,7 +32,8 @@ elka::SerialBuffer *_tx_sb[MAX_UART_PORTS];
 // Receive from ELKA HW
 elka::SerialBuffer *_rx_sb[MAX_UART_PORTS];
 
-//TODO read to a caching buffer before parsing to _rx_buf
+//TODO Read to a caching buffer before parsing to _rx_buf
+//     Necessary step if messages are chunked
 void elka_read_callback(void *context, 
                         char *buffer,
                         size_t num_bytes) {
