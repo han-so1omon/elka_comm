@@ -9,6 +9,7 @@
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
 #include <utility>
+#include <elka_defines.h>
 
 #include "elka_free_rtos.h"
 

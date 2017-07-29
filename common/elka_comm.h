@@ -4,6 +4,7 @@
 #include "elka.h"
 
 #include <elka_log.h>
+#include <elka_defines.h>
 
 #include <vector>
 #include <map>
