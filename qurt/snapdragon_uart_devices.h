@@ -23,8 +23,12 @@ public:
   hrt_abstime _now; 
 
   input_rc_s _input_rc;
-  elka_msg_ack_s _elka_ack_snd, _elka_ack_rcv;
-  elka_msg_s _elka_snd, _elka_rcv;
+  elka_msg_ack_s _elka_ack_snd,
+                 _elka_ack_rcv,
+                 _elka_ack_rcv_cmd;
+  elka_msg_s _elka_snd,
+             _elka_rcv,
+             _elka_rcv_cmd;
 
   // Advertise elka msg and elka msg ack
   orb_advert_t _elka_ack_pub;
@@ -35,7 +39,19 @@ public:
   ~UARTPort();
 
   // Open port for UART
-  int init();
+  static int initialize(uint8_t port_num, uint8_t buf_t,
+      uint8_t size, char *dev_name);
+
+  static uart::UARTPort *get_instance() {
+    return _instance;
+  }
+  
+  /**
+   * Print statistics
+   * @param reset, if true reset statistics afterwards
+   * @return true if something printed, false otherwise
+   */
+  bool print_statistics(bool reset);
 
   // Serial methods ------------------------------
   // @return serial_fd for desired port_num
@@ -55,6 +71,8 @@ public:
  // int read_write(elka_msg_s &elka_ret, elka_msg_s &elka_snd);
   
   // End serial methods ------------------------------
+
+  uint8_t parse_spektrum_msg(input_rc_s input_rc);
 
   // Add message to buffer
   // Adds message to buffer for all applicable
@@ -88,9 +106,8 @@ public:
   // @return msg_type if msg is meant for u
   //         MSG_NULL if msg not meant for u
   //         MSG_FAILED If msg meant for u and incorrect
-  uint8_t parse_elka_msg(
-      elka_msg_s &elka_ret,
-      elka_msg_ack_s &elka_ack);
+  uint8_t parse_elka_msg(elka_msg_s &elka_ret);
+  uint8_t parse_elka_msg(elka_msg_ack_s &elka_msg);
 
   // Check ack with most recent message sent
   // Check ack with respect to port number from elka_ack.msg_id
@@ -102,13 +119,21 @@ public:
   void update_time();
 
 private:
+ 
+  uint8_t start_port() override;
+  uint8_t stop_port() override;
+  uint8_t pause_port() override;
+  uint8_t resume_port() override;
 
-  bool start_port() override;
-  bool stop_port() override;
-  bool pause_port() override;
-  bool resume_port() override;
+  uint8_t remote_ctl_port() override;
+  uint8_t autopilot_ctl_port() override;
+  uint8_t spektrum_ctl_port(bool kill,
+                            bool switch_to_spektrum);
+
 
   // Data members
+  static UARTPort *_instance; // Singleton port instance
+
   uint8_t _state; // state of Snapdragon UART
   int _serial_fd;
   char _dev_name[MAX_NAME_LEN];
@@ -143,6 +168,6 @@ private:
                          elka_msg_ack_s &elka_ack,
                          struct elka_msg_id_s &msg_id);
 
-  int deinit();
+  int deinitialize();
 };
 #endif
