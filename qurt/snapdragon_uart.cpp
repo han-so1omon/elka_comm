@@ -262,9 +262,21 @@ int elka_parse_loop(int argc, char **argv) {
   uint8_t nxt_msg_type[2], //nxt_msg_len[2],
           parse_res;
 
+  // FIXME debug build message
+  uint8_t dbg_data[6] = {0, 1, 0, 1, 0, 1};
+  uint8_t dbg_len = 6;
+  dev_id_t target_dev = 0; // broadcast id
+
   while (!thread_should_exit[1]) {
-    //FIXME once the second message is received, this loop stops
-    //      (hangs?)
+
+    // FIXME send debug message
+    elka_dev->add_msg(MSG_ROUTE_HB,
+                dbg_len,
+                0,
+                0,
+                dbg_data,
+                &target_dev);
+
     // Remove next message from _rx_buf to parse
     // Skip parsing if there is no message in buffer
     // Push ack if necessary

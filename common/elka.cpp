@@ -283,7 +283,7 @@ void print_elka_msg(elka_msg_ack_s &elka_msg) {
   LOG_INFO("\n");
 }
 
-void print_array(uint8_t *buf, uint8_t len) {
+void print_array(uint8_t *buf, uint16_t len) {
   char to_print[4*MAX_MSG_LEN+1],
        a_char[5]; // 3 chars max for a uint8 number and empty space
   uint8_t i=0;
@@ -304,12 +304,12 @@ void print_elka_serial_array(uint8_t *buf) {
   print_array(buf,len);
 }
 
-void print_uint8_array(uint8_t *buf, uint8_t len) {
+void print_uint8_array(uint8_t *buf, uint16_t len) {
   LOG_INFO("uint8 array");
   print_array(buf,len);
 }
 
-void print_char_array(char *buf, uint8_t len) {
+void print_char_array(char *buf, uint16_t len) {
   LOG_INFO("char array");
   print_array((uint8_t *)buf,len);
 }

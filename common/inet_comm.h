@@ -5,7 +5,6 @@
 #include <elka_comm/common/elka_comm.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
-#include <elka_defines.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -58,12 +57,14 @@ int socket_proc_start(
 		Child *child,
 		const char *hostaddr,
 		uint8_t sock_side,
+    int8_t *socket_state,
     elka::SerialBuffer *tx_sb,
     elka::SerialBuffer *rx_sb);
 
 int socket_loop(
 		const char *hostaddr,
 		uint8_t sock_side,
+    int8_t *socket_state,
     elka::SerialBuffer *tx_sb,
     elka::SerialBuffer *rx_sb);
 
@@ -82,4 +83,3 @@ int socket_write_elka_msg(
     uint8_t sock_side);
 
 #endif
-

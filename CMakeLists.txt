@@ -3,16 +3,19 @@ if(${OS} STREQUAL "ubuntu")
 pybind11_add_module(elka_comm
 	MODULE
   pyelka_comm.cpp
+  common/boost_uart.cpp
   common/elka_comm.cpp
   common/elka.cpp
+  common/inet_comm.cpp
   gnd_station/elka_devices.cpp
-  gnd_station/inet_comm.cpp
 )
 
 target_link_libraries(
   elka_comm
 	PUBLIC
 	msg_gen
+  ${Boost_SYSTEM_LIBRARY}
+  ${Boost_THREAD_LIBRARY}
 )
 
 set_target_properties(elka_comm PROPERTIES

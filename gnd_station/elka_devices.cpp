@@ -192,11 +192,18 @@ uint8_t elka::GroundPort::send_msg(elka_msg_s &elka_msg) {
               &elka_msg);
               */
 
+	// write to serial port
+	if (_serial_port_state = CONNECTION_OPEN) {
+		_serial.write_elka_msg(elka_msg);	
+	}
+
   // write to socket 
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      _inet_role);
+  if (_socket_state == CONNECTION_OPEN) {
+    socket_write_elka_msg(
+        _inet_proc.pid,
+        elka_msg,
+        _inet_role);
+  }
 
   return msg_type;
 }
@@ -211,6 +218,11 @@ uint8_t elka::GroundPort::send_msg(elka_msg_ack_s &elka_msg) {
               _elka_ack_pub,
               &elka_msg);
               */
+
+	// write to serial port
+	if (_serial_port_state = CONNECTION_OPEN) {
+		_serial.write_elka_msg(elka_msg);	
+	}
 
   // write to socket 
   socket_write_elka_msg(
@@ -486,13 +498,20 @@ uint8_t elka::GroundPort::start_port() {
   _hw_state = HW_CTL_START;
   _prev_hw_state = tmp_state;
 
+	if (_serial.connect("/dev/ttyUSB0", 115200)) {		
+		_serial_port_state = CONNECTION_OPEN;
+	} else {
+		_serial_port_state = CONNECTION_CLOSED;
+	}
+
   //FIXME determine client or server programattically
   // For client
   _inet_role = CLIENT;
   socket_proc_start(
       &_inet_proc,
       "192.168.1.1",
-      CLIENT,
+      _inet_role,
+      &_socket_state,
       _tx_buf,
       _rx_buf);
   

@@ -1,4 +1,3 @@
-#include <dev_fs_lib_serial.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <stdint.h>
@@ -12,10 +11,13 @@
 #include <unistd.h>
 #include <vector>
 
+#include <elka_comm/common/basic_uart.h>
+
+#if defined(__PX4_QURT)
+
+#include <dev_fs_lib_serial.h>
 #include <px4_log.h>
 #include <px4_defines.h>
-
-#include "basic_uart.h"
 #include "platform.h"
 #include "status.h"
 
@@ -25,15 +27,18 @@ const char *serial_path[MAX_UART_DEV_NUM] = {
   "/dev/tty-5", "/dev/tty-6"
 };
 
+#endif
+
 struct termios oldtio;
 
 // Send to ELKA HW
-elka::SerialBuffer *_tx_sb[MAX_UART_PORTS];
+static elka::SerialBuffer *_tx_sb[MAX_UART_DEV_NUM];
 // Receive from ELKA HW
-elka::SerialBuffer *_rx_sb[MAX_UART_PORTS];
+static elka::SerialBuffer *_rx_sb[MAX_UART_DEV_NUM];
 
 //TODO Read to a caching buffer before parsing to _rx_buf
 //     Necessary step if messages are chunked
+#if defined(__PX4_QURT)
 void elka_read_callback(void *context, 
                         char *buffer,
                         size_t num_bytes) {
@@ -44,7 +49,7 @@ void elka_read_callback(void *context,
   uint8_t num_retries;
   size_t msg_id_sz = sizeof(msg_id), msg_num_sz = sizeof(msg_num);
 
-  PX4_INFO("performing read cb"); fflush(stdout);
+  LOG_INFO("performing read cb"); fflush(stdout);
 
   if (num_bytes > 0) {
     // Parse in msg id and msg num
@@ -70,7 +75,7 @@ void elka_read_callback(void *context,
         num_retries);
 
     if (i >= num_bytes) {
-      PX4_ERR("error: read callback with not enough data in the buffer");
+      LOG_ERR("error: read callback with not enough data in the buffer");
     }
 
     //TODO is this sufficient to not cause a data race on buffer? Remember that
@@ -78,7 +83,7 @@ void elka_read_callback(void *context,
     // I assume so b/c a different instance of `buffer` is pushed to the
     // stack for each function call.
   } else {
-    PX4_ERR("error: read callback with no data in the buffer");
+    LOG_ERR("error: read callback with no data in the buffer");
   }
 
   /*
@@ -86,14 +91,15 @@ void elka_read_callback(void *context,
 
   if (num_bytes > 0) {
     memcpy_into(&_rx[rx_dev_id], buffer, num_bytes);
-    PX4_INFO("/dev/tty-%d read callback received bytes [%d]:",
+    LOG_INFO("/dev/tty-%d read callback received bytes [%d]:",
       rx_dev_id, num_bytes);
     buffer_print_next_msg(&_rx[rx_dev_id]);
   } else {
-    PX4_ERR("error: read callback with no data in the buffer");
+    LOG_ERR("error: read callback with no data in the buffer");
   }
   */
 }
+#endif
 
 /*
 int memcpy_into(buffer *dst, char *src, size_t num_bytes) {
@@ -102,15 +108,15 @@ int memcpy_into(buffer *dst, char *src, size_t num_bytes) {
     memcpy(dst->buffer, src, num_bytes);
   } else if (dst->type == RINGBUF) {
     //TODO
-    return PX4_ERROR;
+    return ELKA_ERROR;
   } else if (dst->type == NO_BUF) {
-    PX4_INFO("Can't copy UART message. No buffer available!");
-    return PX4_ERROR;
+    LOG_INFO("Can't copy UART message. No buffer available!");
+    return ELKA_ERROR;
   } else {
-    PX4_ERR("Can't copy UART message. Buffer type undefined");
-    return PX4_ERROR;
+    LOG_ERR("Can't copy UART message. Buffer type undefined");
+    return ELKA_ERROR;
   }
-  return PX4_OK;
+  return ELKA_OK;
 }
 */
 
@@ -119,7 +125,7 @@ int set_interface_attribs(int fd, int baud, int parity) {
 	memset (&tty, 0, sizeof tty);
 	if (tcgetattr (fd, &tty) != 0)
 	{
-		PX4_ERR("error %d from tcgetattr", errno);
+		LOG_ERR("error %d from tcgetattr", errno);
 		return -1;
 	}
 
@@ -158,7 +164,7 @@ int set_interface_attribs(int fd, int baud, int parity) {
 
 	if (tcsetattr (fd, TCSANOW, &tty) != 0)
 	{
-		PX4_ERR("error %d from tcsetattr", errno);
+		LOG_ERR("error %d from tcsetattr", errno);
 		return -1;
 	}
 	return 0;
@@ -169,7 +175,7 @@ void set_blocking(int fd, int should_block) {
 	memset (&tty, 0, sizeof tty);
 	if (tcgetattr (fd, &tty) != 0)
 	{
-		PX4_ERR("error %d from tggetattr", errno);
+		LOG_ERR("error %d from tggetattr", errno);
 		return;
 	}
 
@@ -177,15 +183,15 @@ void set_blocking(int fd, int should_block) {
 	tty.c_cc[VTIME] = 5;            // 0.5 seconds read timeout
 
 	if (tcsetattr (fd, TCSANOW, &tty) != 0)
-		PX4_ERR("error %d setting term attributes", errno);
+		LOG_ERR("error %d setting term attributes", errno);
 }
 
 int serial_open(int port_num, elka::SerialBuffer *tx_sb,
     elka::SerialBuffer *rx_sb) {
   int serial_fd;
   serial_fd = open(serial_path[port_num-1], O_RDWR | O_NOCTTY);
-  if (serial_fd >= SUCCESS) {
-    PX4_INFO("Opened serial port %s", serial_path[port_num-1]);
+  if (serial_fd >= ELKA_OK) {
+    LOG_INFO("Opened serial port %s", serial_path[port_num-1]);
 
     // Save current serial port settings
     tcgetattr(serial_fd,&oldtio);
@@ -199,29 +205,29 @@ int serial_open(int port_num, elka::SerialBuffer *tx_sb,
 
   } else {
     //FIXME log error!
-    PX4_ERR("Error opening serial port");
-    serial_fd = PX4_ERROR;
+    LOG_ERR("Error opening serial port");
+    serial_fd = ELKA_ERROR;
   }
 
   return serial_fd;
 }
 
 int serial_close(int fd, int port_num) {
-	PX4_INFO("Closing serial port");
+	LOG_INFO("Closing serial port");
   
   // restore old port settings
   tcsetattr(fd,TCSANOW,&oldtio);
 
   if (!close(fd)) {
-    PX4_INFO("Successfully closed serial port:\n\t\
+    LOG_INFO("Successfully closed serial port:\n\t\
 port number %d\tfile descriptor %d", port_num, fd);
 
     _tx_sb[port_num] = nullptr;
     _rx_sb[port_num] = nullptr;
   } else {
-    PX4_INFO("Error closing serial port:\n\t\
+    LOG_INFO("Error closing serial port:\n\t\
 port number %d\tfile descriptor %d", port_num, fd);
-    fd = PX4_ERROR;
+    fd = ELKA_ERROR;
   }
 
   return fd;
@@ -232,8 +238,9 @@ port number %d\tfile descriptor %d", port_num, fd);
 int assign_serial_read_callback(int fd, int port_num) {
   int res;
 
-  PX4_INFO("Beginning serial read callback setup");
+  LOG_INFO("Beginning serial read callback setup");
 
+#if defined(__PX4_QURT)
   struct dspal_serial_ioctl_receive_data_callback recv_cb;
   recv_cb.rx_data_callback_func_ptr = elka_read_callback;
 
@@ -243,16 +250,17 @@ int assign_serial_read_callback(int fd, int port_num) {
       SERIAL_IOCTL_SET_RECEIVE_DATA_CALLBACK,
       (void *)&recv_cb);
 
-  PX4_INFO("Using callback on fd %d",fd);
-  PX4_INFO("Set serial read callback on %s %s",
+  LOG_INFO("Using callback on fd %d",fd);
+  LOG_INFO("Set serial read callback on %s %s",
     serial_path[port_num-1], res < 0 ? "failed" : "succeeded");
 
   if (res < 0) {
-    PX4_INFO("Closing file %s",
+    LOG_INFO("Closing file %s",
       serial_path[port_num-1]);
     close(fd);
-    fd = PX4_ERROR;
+    fd = ELKA_ERROR;
   }
+#endif
 
 	return fd;
 }
@@ -260,18 +268,18 @@ int assign_serial_read_callback(int fd, int port_num) {
 int serial_read(int fd, int port_num, uint8_t *rx_buffer) {
   int num_bytes_read = 0;
 
-  PX4_INFO("Beginning serial read");
+  LOG_INFO("Beginning serial read");
   
   num_bytes_read = read(fd, rx_buffer,
       SERIAL_SIZE_OF_DATA_BUFFER);
-  PX4_INFO("%s read bytes [%d]: %s",
+  LOG_INFO("%s read bytes [%d]: %s",
       serial_path[port_num-1], num_bytes_read, rx_buffer);
 
   if (num_bytes_read < 0) {
-    PX4_INFO("Closing file %s",
+    LOG_INFO("Closing file %s",
       serial_path[port_num-1]);
     close(fd);
-    fd = PX4_ERROR;
+    fd = ELKA_ERROR;
   }
 
 	return fd;
@@ -281,19 +289,19 @@ int serial_write(int fd, int port_num,
     uint8_t *tx_buffer, uint8_t tx_buffer_len){
   int num_bytes_written = 0;
 
-  PX4_INFO("Beginning serial write");
+  LOG_INFO("Beginning serial write");
   num_bytes_written = write(fd,
       (const uint8_t *)tx_buffer,
       tx_buffer_len);
 
   if (num_bytes_written == (ssize_t)tx_buffer_len && port_num > 0) {
-    PX4_INFO("Wrote %d bytes to %s", num_bytes_written,
+    LOG_INFO("Wrote %d bytes to %s", num_bytes_written,
         serial_path[port_num-1]);
   }/* else if (num_bytes_written != (ssize_t)tx_buffer_len) {
-    PX4_ERR("failed to write to %s", serial_path[port_num]);
-    PX4_INFO("Closing file %s", serial_path[port_num]);
+    LOG_ERR("failed to write to %s", serial_path[port_num]);
+    LOG_INFO("Closing file %s", serial_path[port_num]);
     close(fd);
-    fd = PX4_ERROR;
+    fd = ELKA_ERROR;
   }
   */
 
@@ -306,10 +314,10 @@ int serial_read_write(int fd, int port_num,
   if (serial_write(fd, port_num, tx_buffer, tx_buffer_len) == fd) {
 		usleep(SERIAL_SIZE_OF_DATA_BUFFER*100);
 		if (serial_read(fd, port_num, rx_buffer) != fd) {
-      res = PX4_ERROR;
+      res = ELKA_ERROR;
 		} 
 	} else {
-		res = PX4_ERROR;
+		res = ELKA_ERROR;
 	}
   return res;
 }
