@@ -8,7 +8,7 @@ elka::ELKAPort::ELKAPort(uint8_t port_num, uint8_t port_type,
     uint8_t buf_type, uint8_t size, char *dev_name) 
     : elka::CommPort(port_num, port_type, buf_type, size) {
   if (!(init() == ELKA_OK)) {
-    PX4_ERR("Unable to initialize elka device %s",dev_name);
+    LOG_ERR("Unable to initialize elka device %s",dev_name);
     errno = ECANCELED;
   } else {
     strcpy(_dev_name, dev_name);
@@ -20,7 +20,7 @@ elka::ELKAPort::ELKAPort(uint8_t port_num, uint8_t port_type,
 
 elka::ELKAPort::~ELKAPort() {
   if (!(deinit() == ELKA_OK)) {
-    PX4_ERR("Unable to deinitialize elka device %s",
+    LOG_ERR("Unable to deinitialize elka device %s",
     _dev_name);
     errno = ECANCELED;
   };
@@ -369,7 +369,7 @@ uint8_t elka::ELKAPort::check_ack(struct elka_msg_ack_s &elka_ack) {
             ebm->_num_retries);
       } else if (ret != elka_msg_ack_s::ACK_NULL) {
         // Message received and processed fine, so erase it
-        PX4_INFO("erasing message");
+        LOG_INFO("erasing message");
         sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num, false);
         sb->push_recent_acks(elka_ack.msg_num);
       }
@@ -410,7 +410,7 @@ void elka::ELKAPort::update_time() {
 int elka::PX4Port::deinit() {
   _routing_table.clear();
   stop_port();
-  return PX4_OK;
+  return ELKA_OK;
 }
 
 bool elka::PX4Port::start_port() {

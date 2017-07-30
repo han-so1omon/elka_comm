@@ -15,6 +15,7 @@
 #include <uORB/topics/elka_msg_ack.h>
 
 #include <elka_log.h>
+#include <elka_defines.h>
 
 #if defined(__PX4_QURT) || defined(__PX4_POSIX)
 

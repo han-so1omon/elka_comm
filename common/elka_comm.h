@@ -4,10 +4,13 @@
 #include "elka.h"
 
 #include <elka_log.h>
+#include <elka_defines.h>
 
 #include <vector>
 #include <map>
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
 #include <pthread.h>
+#endif
 
 namespace elka {
   struct SerialBuffer;
@@ -67,8 +70,10 @@ private:
   uint8_t _type;
   dev_id_t _port_id;
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
   // Mutexes for _buffer 
   pthread_mutex_t _buf_mutex;
+#endif
 
 public:
   SerialBuffer(dev_id_t port_id, uint8_t buf_type, uint16_t size);
