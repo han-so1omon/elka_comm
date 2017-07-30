@@ -179,7 +179,7 @@ uint8_t elka::SerialBuffer::push_msg(
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
 
   if (_type == ARRAY) {
@@ -205,7 +205,7 @@ uint8_t elka::SerialBuffer::push_msg(
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
 
   return msg_type;
@@ -229,7 +229,7 @@ uint8_t elka::SerialBuffer::get_msg(
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
 
   // Get message type for message at front of buffer
@@ -283,7 +283,7 @@ uint8_t elka::SerialBuffer::get_msg(
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
 
   return ret;
@@ -299,7 +299,7 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
 
   for (std::vector<ElkaBufferMsg>::iterator it =
@@ -317,7 +317,7 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
 
   return ebm;
@@ -347,7 +347,7 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
 
   for (std::vector<ElkaBufferMsg>::iterator it =
@@ -370,7 +370,7 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
   return ebm;
 }
@@ -407,7 +407,7 @@ uint8_t elka::SerialBuffer::pop_msg() {
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
 
   if (_type == ARRAY) {
@@ -425,7 +425,7 @@ uint8_t elka::SerialBuffer::pop_msg() {
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
 
   return ret;
@@ -441,7 +441,7 @@ void elka::SerialBuffer::erase_msg(
   pthread_mutex_lock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_acquire acquire;
-  //Py_BEGIN_ALLOW_THREADS
+  Py_BEGIN_ALLOW_THREADS
 #endif
   for (std::vector<ElkaBufferMsg>::reverse_iterator it =
        _buffer.rbegin();
@@ -456,7 +456,7 @@ void elka::SerialBuffer::erase_msg(
   pthread_mutex_unlock(&_buf_mutex);
 #elif defined (__ELKA_UBUNTU)
   //py::gil_scoped_release release;
-  //Py_END_ALLOW_THREADS
+  Py_END_ALLOW_THREADS
 #endif
 
   /*

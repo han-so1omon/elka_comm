@@ -2,6 +2,9 @@
 #include <string.h>
 #include <unistd.h>
 
+#include <elka_log.h>
+#include <elka_defines.h>
+
 #include "inet_comm.h"
 
 // _sockfd = file descriptor returned by socket system call
@@ -40,9 +43,9 @@ struct in_addr _ipaddr;
 int _num_bytes;
 
 // Send to ELKA HW
-elka::SerialBuffer *_tx_sb;
+static elka::SerialBuffer *_tx_sb;
 // Receive from ELKA HW
-elka::SerialBuffer *_rx_sb;
+static elka::SerialBuffer *_rx_sb;
 
 void set_sock_opts(int fd, uint8_t sock_side) {
   if (sock_side == SERVER) {
@@ -119,20 +122,28 @@ int socket_open(
     }
 
     // Listen on the socket for connections.
-    // 5 is the size of the backlog queue, which determines the number
-    // of connections that can be waiting while the process is handling
+    // 5 is the size of the backlog queue,
+    // which determines the number
+    // of connections that can be waiting
+    // while the process is handling
     // a particular connection
-    listen(_sockfd[1], 5);
+    if (listen(_sockfd[1], 5) < 0) {
+      LOG_ERR("Error on listen");
+      return ELKA_ERROR;
+    }
 
     _clilen = sizeof(_cli_addr);
 
-    // FIXME should not block
-    // Causes the process to block until a client connects to a server
-    // Returns a new file descriptor, on which all communication on this
+    // Causes the process to block
+    // until a client connectsto a server
+    // Returns a new file descriptor,
+    // on which all communication on this
     // connection should be done
+    LOG_INFO("hey");
     _newsockfd = accept(_sockfd[1],
         (struct sockaddr *) &_cli_addr,
         &_clilen);
+    LOG_INFO("ya");
     
     if (_newsockfd < 0) {
       LOG_ERR("Error on accept");
@@ -288,16 +299,19 @@ int socket_proc_start(
 		Child *child,
 		const char *hostaddr,
 		uint8_t sock_side,
+    int8_t *socket_state,
     elka::SerialBuffer *tx_sb,
     elka::SerialBuffer *rx_sb) {
 	
 	if ((child->pid = fork()) < 0) {
+    *socket_state = CONNECTION_NULL;
 		return ELKA_ERROR;	
 	} else if (child->pid == 0) {
 		socket_loop(hostaddr, sock_side,
-                tx_sb, rx_sb);
+                socket_state, tx_sb, rx_sb);
 		exit(0);
 	} else {
+    *socket_state = CONNECTION_NULL;
 		return ELKA_OK;
 	}
 
@@ -307,6 +321,7 @@ int socket_proc_start(
 int socket_loop(
 		const char *hostaddr,
 		uint8_t sock_side,
+    int8_t *socket_state,
     elka::SerialBuffer *tx_sb,
     elka::SerialBuffer *rx_sb) {
 	int sock_fd;
@@ -323,19 +338,25 @@ int socket_loop(
     return ELKA_ERROR;
   }
 
-  sock_fd = socket_open(7, hostaddr, sock_side);
+  if ((sock_fd = socket_open(7, hostaddr, sock_side))
+      != ELKA_ERROR) {
+    *socket_state = CONNECTION_OPEN;
+  } else {
+    *socket_state = CONNECTION_CLOSED;
+  }
 
   LOG_INFO("socket opened");
 
   while(socket_read_elka_msg(sock_fd, sock_side) >= 0) {
-    LOG_INFO("derf");
     sleep(1);
   }
 
   LOG_INFO("Closing server socket");
-  if (socket_close(sock_fd, sock_side) == ELKA_OK)
+  if (socket_close(sock_fd, sock_side) == ELKA_OK) {
     sock_fd = -1;
-  else {
+    *socket_state = CONNECTION_CLOSED;
+  } else {
+    *socket_state = CONNECTION_ERROR;
     LOG_ERR("Error closing socket");
     return ELKA_ERROR;
   }

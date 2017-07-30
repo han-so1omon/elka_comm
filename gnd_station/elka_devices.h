@@ -5,12 +5,14 @@
 #include <stdlib.h>
 #include <elka_comm/common/elka.h>
 #include <elka_comm/common/elka_comm.h>
+#include <elka_comm/common/inet_comm.h>
+#include <elka_comm/common/boost_uart.h>
+#include <elka_defines.h>
+#include <elka_log.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
 #include <utility>
-
-#include "inet_comm.h"
 
 namespace elka {
 class GroundPort;
@@ -123,7 +125,10 @@ private:
   // This must be updated frequently thru callback or otherwise!
   char _dev_name[MAX_NAME_LEN];
   uint8_t _inet_role;
+  int8_t _socket_state;
+  int8_t _serial_port_state;
   Child _inet_proc;
+	SerialHandler _serial;
 
   void wait_for_child(Child *child);
 

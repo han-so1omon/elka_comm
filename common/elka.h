@@ -279,10 +279,10 @@ struct snd_params_s {
 #define SPEKTRUM_SWITCH_HIGH 1901
 
 // Define socket values
-#define SOCKET_ERROR -1
-#define SOCKET_NULL 0
-#define SOCKET_CLOSED 1
-#define SOCKET_OPEN 2
+#define CONNECTION_ERROR -1
+#define CONNECTION_NULL 0
+#define CONNECTION_CLOSED 1
+#define CONNECTION_OPEN 2
 
 // Call this in Device instantiation to get device id
 void get_dev_id_t(dev_id_t *d);
@@ -494,10 +494,10 @@ void print_elka_msg(elka_msg_ack_s &elka_msg);
 void print_elka_routing_msg(elka_msg_s &elka_msg);
 
 // Buffer print convenience methods
-void print_array(uint8_t *buf, uint8_t len);
+void print_array(uint8_t *buf, uint16_t len);
 void print_elka_serial_array(uint8_t *buf);
-void print_uint8_array(uint8_t *buf, uint8_t len);
-void print_char_array(char *buf, uint8_t len);
+void print_uint8_array(uint8_t *buf, uint16_t len);
+void print_char_array(char *buf, uint16_t len);
 
 // Circular buffer methods
 // cb_max_size is max buffer size before wrapping
