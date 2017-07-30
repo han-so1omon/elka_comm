@@ -1,15 +1,12 @@
 #include <cstring>
 #include <errno.h>
-#include <px4_config.h>
-#include <px4_defines.h>
-#include <px4_log.h>
 
 #include "elka_devices.h"
 
-elka::PX4Port *elka::PX4Port::_instance = nullptr;
+elka::GroundPort *elka::GroundPort::_instance = nullptr;
 
 //-----------------Public Methods----------------------
-elka::PX4Port::PX4Port(uint8_t port_num, uint8_t port_type,
+elka::GroundPort::GroundPort(uint8_t port_num, uint8_t port_type,
     uint8_t buf_type, uint8_t size, char *dev_name) 
     : elka::CommPort(port_num, port_type, buf_type, size) {
 
@@ -21,10 +18,12 @@ elka::PX4Port::PX4Port(uint8_t port_num, uint8_t port_type,
   memset(&_elka_rcv_cmd, 0, sizeof(_elka_rcv_cmd));
   
   // Advertise attitude topic
+   /*
   _elka_msg_pub = orb_advertise(
       ORB_ID(elka_msg), &_elka_snd);
   _elka_ack_pub = orb_advertise(
       ORB_ID(elka_msg_ack), &_elka_ack_snd);
+      */
   
   //orb_advert_t elka_msg_pub = orb_advertise(
   //    ORB_ID(elka_msg), NULL);
@@ -48,9 +47,9 @@ elka::PX4Port::PX4Port(uint8_t port_num, uint8_t port_type,
   start_port();
 }
 
-elka::PX4Port::~PX4Port() {
-  if (!(deinitialize() == PX4_OK)) {
-    PX4_ERR("Unable to deinitialize elka device %s",
+elka::GroundPort::~GroundPort() {
+  if (!(deinitialize() == ELKA_OK)) {
+    LOG_ERR("Unable to deinitialize elka device %s",
     _dev_name);
     errno = ECANCELED;
   };
@@ -59,18 +58,18 @@ elka::PX4Port::~PX4Port() {
   delete _rx_buf;
 }
 
-int elka::PX4Port::initialize(
+int elka::GroundPort::initialize(
       uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t queue_sz, char *dev_name) {
   if (_instance == nullptr) {
-    _instance = new PX4Port(port_num, port_type,
+    _instance = new GroundPort(port_num, port_type,
         buf_type, queue_sz, dev_name);
   }
 
   return _instance != nullptr;
 }
 
-bool elka::PX4Port::print_statistics(bool reset) {
+bool elka::GroundPort::print_statistics(bool reset) {
   return false;
 }
 
@@ -78,7 +77,7 @@ bool elka::PX4Port::print_statistics(bool reset) {
 // with MSG_ACK.
 // In all other cases these parameters are handled upon
 // message pushing/getting
-uint8_t elka::PX4Port::add_msg(
+uint8_t elka::GroundPort::add_msg(
     uint8_t msg_type,
     uint8_t len,
     uint8_t num_retries,
@@ -157,13 +156,13 @@ uint8_t elka::PX4Port::add_msg(
   return msg_type;
 }
 
-uint8_t elka::PX4Port::set_dev_state_msg(
+uint8_t elka::GroundPort::set_dev_state_msg(
     elka_msg_s &elka_snd,
     dev_id_t rcv_id,
     uint8_t state,
-    bool elka_ctl) {
+    bool hw) {
   uint8_t msg_t;
-  if (elka_ctl) {
+  if (hw) {
     msg_t = MSG_ELKA_CTL;
   } else {
     msg_t = MSG_PORT_CTL;
@@ -182,23 +181,18 @@ uint8_t elka::PX4Port::set_dev_state_msg(
 
 // TODO eventually put this in common elka library
 // TODO get rid of parameter, as _elka_snd should be set
-uint8_t elka::PX4Port::send_msg(elka_msg_s &elka_msg) {
+uint8_t elka::GroundPort::send_msg(elka_msg_s &elka_msg) {
   uint8_t msg_type;
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
 
+  /*
   orb_publish(ORB_ID(elka_msg),
               _elka_msg_pub,
               &elka_msg);
+              */
 
   // write to socket 
-  /*  
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      CLIENT);
-  */
-
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
@@ -207,33 +201,28 @@ uint8_t elka::PX4Port::send_msg(elka_msg_s &elka_msg) {
   return msg_type;
 }
 
-uint8_t elka::PX4Port::send_msg(elka_msg_ack_s &elka_msg) {
+uint8_t elka::GroundPort::send_msg(elka_msg_ack_s &elka_msg) {
   uint8_t msg_type;
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
 
+  /*
   orb_publish(ORB_ID(elka_msg_ack),
               _elka_ack_pub,
               &elka_msg);
+              */
 
   // write to socket 
-  /*  
-  socket_write_elka_msg(
-      _inet_proc.pid,
-      elka_msg,
-      CLIENT);
-  */
-
   socket_write_elka_msg(
       _inet_proc.pid,
       elka_msg,
       _inet_role);
-
+  
   return msg_type;
 }
 
 // For now: Do nothing with elka_msg.msg_num field
-uint8_t elka::PX4Port::parse_elka_msg(elka_msg_s &elka_msg) {
+uint8_t elka::GroundPort::parse_elka_msg(elka_msg_s &elka_msg) {
   elka_msg_ack_s elka_ack;
   struct elka_msg_id_s msg_id;
   uint8_t parse_res;
@@ -293,7 +282,7 @@ uint8_t elka::PX4Port::parse_elka_msg(elka_msg_s &elka_msg) {
   return parse_res;
 }
 
-uint8_t elka::PX4Port::parse_elka_msg(elka_msg_ack_s &elka_msg) {
+uint8_t elka::GroundPort::parse_elka_msg(elka_msg_ack_s &elka_msg) {
   dev_id_t snd_id, rcv_id;
   bool in_route;
 
@@ -322,7 +311,7 @@ uint8_t elka::PX4Port::parse_elka_msg(elka_msg_ack_s &elka_msg) {
     return MSG_ACK;
 }
 
-uint8_t elka::PX4Port::parse_motor_cmd(elka_msg_s &elka_msg,
+uint8_t elka::GroundPort::parse_motor_cmd(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
   switch (_sw_state) {
@@ -340,7 +329,7 @@ uint8_t elka::PX4Port::parse_motor_cmd(elka_msg_s &elka_msg,
   }
 }
 
-uint8_t elka::PX4Port::parse_port_ctl(elka_msg_s &elka_msg,
+uint8_t elka::GroundPort::parse_port_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
   uint8_t action = elka_msg.data[1];
@@ -380,7 +369,7 @@ uint8_t elka::PX4Port::parse_port_ctl(elka_msg_s &elka_msg,
   return msg_id.type;
 }
 
-uint8_t elka::PX4Port::parse_elka_ctl(elka_msg_s &elka_msg,
+uint8_t elka::GroundPort::parse_elka_ctl(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
   uint8_t action = elka_msg.data[1];
@@ -415,7 +404,7 @@ uint8_t elka::PX4Port::parse_elka_ctl(elka_msg_s &elka_msg,
 
 // Check ack for sent message
 // Check ack with respect to port number from elka_ack.msg_id
-uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
+uint8_t elka::GroundPort::check_ack(struct elka_msg_ack_s &elka_ack) {
   elka::SerialBuffer *sb;
   struct elka_msg_id_s ack_id;
   uint8_t ret;
@@ -449,7 +438,8 @@ uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
                   ebm->_rmv_msg_num,
                   ebm->_num_retries)) ==
            MSG_FAILED) {
-        PX4_WARN("Ack failed msg_id %d msg_num %d. %d retries",
+        LOG_WARN("Ack failed msg_id %" PRMIT "msg_num %" PRIu16
+". %d retries",
             ebm->_msg_id, ebm->_rmv_msg_num,
             ebm->_num_retries);
       } else if (ret != MSG_NULL) {
@@ -465,12 +455,11 @@ uint8_t elka::PX4Port::check_ack(struct elka_msg_ack_s &elka_ack) {
   return ret;
 }
 
-void elka::PX4Port::update_time() {
-  _now = hrt_absolute_time();
+void elka::GroundPort::update_time() {
 }
 
 //-----------------Private Methods---------------------
-void elka::PX4Port::wait_for_child(Child *child) {
+void elka::GroundPort::wait_for_child(Child *child) {
 	int pid, status;
 
 	while ((pid = waitpid(-1, &status, 0)) != -1) {
@@ -481,17 +470,17 @@ void elka::PX4Port::wait_for_child(Child *child) {
 
 	// Check loop not necessary
 	if (child->pid != -1) {
-		PX4_ERR("Child %d died without being tracked", (int)child->pid);
+		LOG_ERR("Child %d died without being tracked", (int)child->pid);
 	}
 }
 
-int elka::PX4Port::deinitialize() {
+int elka::GroundPort::deinitialize() {
   _routing_table.clear();
   stop_port();
-  return PX4_OK;
+  return ELKA_OK;
 }
 
-uint8_t elka::PX4Port::start_port() {
+uint8_t elka::GroundPort::start_port() {
   uint8_t tmp_state = _hw_state;
 
   _hw_state = HW_CTL_START;
@@ -499,40 +488,40 @@ uint8_t elka::PX4Port::start_port() {
 
   //FIXME determine client or server programattically
   // For client
-  /*
-  _inet_role = client
+  _inet_role = CLIENT;
   socket_proc_start(
       &_inet_proc,
       "192.168.1.1",
       CLIENT,
       _tx_buf,
       _rx_buf);
-  */
   
+  /*
   // For server
   _inet_role = SERVER;
   socket_proc_start(
       &_inet_proc,
       NULL,
-      _inet_role,
+      SERVER,
       _tx_buf,
       _rx_buf);
+  */
 
   return resume_port();
 }
 
-uint8_t elka::PX4Port::stop_port() {
+uint8_t elka::GroundPort::stop_port() {
   uint8_t tmp_state = _hw_state;
 
   _hw_state = HW_CTL_STOP;
   _prev_hw_state = tmp_state;
   
-  wait_for_child(&_inet_proc);
+  //wait_for_child(&_inet_proc);
 
   return MSG_ACCEPTED;
 }
 
-uint8_t elka::PX4Port::pause_port() {
+uint8_t elka::GroundPort::pause_port() {
   uint8_t tmp_state = _hw_state;
 
   _hw_state = HW_CTL_PAUSE;
@@ -541,7 +530,7 @@ uint8_t elka::PX4Port::pause_port() {
   return MSG_ACCEPTED;
 }
 
-uint8_t elka::PX4Port::resume_port() {
+uint8_t elka::GroundPort::resume_port() {
   uint8_t tmp_state = _hw_state;
   
   _hw_state = HW_CTL_RESUME;
@@ -550,7 +539,7 @@ uint8_t elka::PX4Port::resume_port() {
   return MSG_ACCEPTED;
 }
 
-uint8_t elka::PX4Port::remote_ctl_port() {
+uint8_t elka::GroundPort::remote_ctl_port() {
   uint8_t tmp_state = _sw_state;
 
   if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
@@ -562,7 +551,7 @@ uint8_t elka::PX4Port::remote_ctl_port() {
 
 }
 
-uint8_t elka::PX4Port::autopilot_ctl_port() {
+uint8_t elka::GroundPort::autopilot_ctl_port() {
   uint8_t tmp_state = _sw_state;
   
   if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {

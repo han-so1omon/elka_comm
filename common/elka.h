@@ -1,3 +1,7 @@
+// Defines using prefix `Py` are specifically for python
+// implementation. The normal defines will not translate to
+// python with h2py.py script.
+// NOTE: Be sure to keep the `Py` defines up to date
 #ifndef ELKA_H
 #define ELKA_H
 
@@ -128,6 +132,7 @@ struct snd_params_s {
 
 // Message is broadcast if receiver id is equal to BROADCAST_MSG_ID
 #define BROADCAST_MSG_ID (dev_id_t)0x00
+#define PyBROADCAST_MSG_ID 0x00
 
 // Define message types for elka_msg, elka_msg_ack, and elka_ctl
 // Odd message types expect ack
@@ -155,19 +160,22 @@ struct snd_params_s {
 //       {dev id, dev route len, dev route,
 //                dev props len, dev props}_i,...}
 #define MSG_NULL 0x00
+#define MSG_ACCEPTED 0x02
+#define MSG_DENIED 0x04
+#define MSG_UNSUPPORTED 0x06
 // Message incorrect
 // Possible modes of failure are:
 //    Message sent to wrong port
 //    Message of wrong format
-#define MSG_FAILED 0x02
+#define MSG_FAILED 0x08
 // Send command to motors
-#define MSG_MOTOR_CMD 0x04
+#define MSG_MOTOR_CMD 0x0a
 // Ack message
-#define MSG_ACK 0x06
+#define MSG_ACK 0x0c
 // Build routing table
-#define MSG_ROUTE_DEV_PROPS 0x08
-#define MSG_ROUTE_REQUEST_HB 0x0a
-#define MSG_ROUTE_HB 0x0c
+#define MSG_ROUTE_DEV_PROPS 0x0e
+#define MSG_ROUTE_REQUEST_HB 0x10
+#define MSG_ROUTE_HB 0x12
 //TODO change PORT_CTL to HW_CTL and
 //            ELKA_CTL to SW_CTL
 // Control Snapdragon Flight ports
@@ -201,20 +209,29 @@ struct snd_params_s {
 #define MAX_NUM_RETRIES 21
 
 // <ELKA_|PORT_>CTL msg format
-// 8b action
-// State STATE_NULL means port not set up
-// State STATE_START means setup and transition to STATE_RESUME
-// State STATE_STOP means tear down
-// State STATE_PAUSE means temporarily stop sending messages
-// State STATE_RESUME means send messages
-#define STATE_NULL 0x00
-#define STATE_START 0x01
-#define STATE_STOP 0x02
-#define STATE_PAUSE 0x03
-#define STATE_RESUME 0x04
+// <HW_|SW_>CTL mst format
+// 1B request/statement, 1B action
+// State HW_CTL_NULL means port not set up
+// State HW_CTL_START means setup and transition to STATE_RESUME
+// State HW_CTL_STOP means tear down
+// State HW_CTL_PAUSE means temporarily stop sending messages
+// State HW_CTL_RESUME means send messages
+#define HW_CTL_NULL 0x00
+#define HW_CTL_FAILED 0x01
+#define HW_CTL_KILL 0x02
+#define HW_CTL_START 0x03
+#define HW_CTL_STOP 0x04
+#define HW_CTL_PAUSE 0x05
+#define HW_CTL_RESUME 0x06
 
-// Define device properties.
-// These are properties from one device to another device.
+#define SW_CTL_NULL 0x00
+#define SW_CTL_FAILED 0x01
+#define SW_CTL_KILL 0x02
+#define SW_CTL_REMOTE 0x03
+#define SW_CTL_SPEKTRUM 0x04
+#define SW_CTL_AUTOPILOT 0x05
+
+// Define device properties.  // These are properties from one device to another device.
 // Eg: A device is connected to another device by
 //     hardware 
 //     A device has permission to use the motors connected 
@@ -234,6 +251,33 @@ struct snd_params_s {
 #define DEV_PROP_HAS_CAMERA (dev_prop_t)0x0c
 #define DEV_PROP_TRANSMISSION_CTL (dev_prop_t)0x0d
 
+#define PyDEV_PROP_POSIX_SIDE 0x00
+#define PyDEV_PROP_QURT_SIDE 0x01
+#define PyDEV_PROP_ELKA_SIDE 0x02 
+#define PyDEV_PROP_HW_CONNECTED 0x03
+#define PyDEV_PROP_WIRELESS_CONNECTED 0x04
+#define PyDEV_PROP_GROUND_STATION 0x05
+#define PyDEV_PROP_FLIGHT_CONTROLLER 0x06
+#define PyDEV_PROP_PERFORM_LOCALIZATION 0x07
+#define PyDEV_PROP_SENSE_LOCATION 0x08
+#define PyDEV_PROP_SPIN_MOTORS (dev_prop_t)0x09
+#define PyDEV_PROP_HAS_MOTORS 0x0a
+#define PyDEV_PROP_USE_CAMERA 0x0b
+#define PyDEV_PROP_HAS_CAMERA 0x0c
+#define PyDEV_PROP_TRANSMISSION_CTL 0x0d
+
+
+// Define Spektrum DX6 values
+// Spektrum stick values are approximate
+// The values range by approximately +-21
+#define SPEKTRUM_STICK_RANGE 21
+#define SPEKTRUM_STICK_LOW 1099
+#define SPEKTRUM_STICK_MID 1500
+#define SPEKTRUM_STICK_HIGH 1901
+#define SPEKTRUM_SWITCH_LOW 1099
+#define SPEKTRUM_SWITCH_MID 1500
+#define SPEKTRUM_SWITCH_HIGH 1901
+
 // Call this in Device instantiation to get device id
 void get_dev_id_t(dev_id_t *d);
 
@@ -251,7 +295,8 @@ inline int8_t cmp_dev_id_t(dev_id_t d1, dev_id_t d2) {
 // Routing table is sorted so that closest devices
 // are near the front
 struct dev_id_tCmp {
-  bool operator()(const dev_id_t &d1, const dev_id_t &d2) const {
+  bool operator()(const dev_id_t &d1,
+												 const dev_id_t &d2) {
     return d1 < d2;
   }
 };
@@ -313,6 +358,12 @@ void get_elka_msg_id_attr(
     uint8_t *snd_params, uint8_t *msg_type, uint8_t *length,
     msg_id_t msg_id);
 
+inline int8_t cmp_msg_id_t(msg_id_t m1, msg_id_t m2) {
+  if (m1 < m2) return -1;
+  else if (m1 > m2) return 1;
+  else return 0;
+}
+
 // Return true if message is broadcast message
 inline bool broadcast_msg(msg_id_t &msg_id) {
   dev_id_t rcv_id;
@@ -327,14 +378,17 @@ inline bool broadcast_msg(dev_id_t &rcv_id) {
   return !cmp_dev_id_t(rcv_id,BROADCAST_MSG_ID);
 }
 
-inline bool initial_msg(msg_id_t &msg_id) {
+inline bool initial_msg(msg_id_t &msg_id,
+                        uint16_t msg_num,
+                        uint8_t num_retries) {
   dev_id_t snd_id, rcv_id;
 
   get_elka_msg_id_attr(&snd_id,&rcv_id,NULL,NULL,NULL,
       msg_id);
 
-  return !( cmp_dev_id_t(snd_id,(dev_id_t)0) || 
-            cmp_dev_id_t(rcv_id,(dev_id_t)0) );
+  return (!cmp_msg_id_t(msg_id, (msg_id_t)0) &&
+          msg_num == 0 &&
+          num_retries == 0);
 }
 
 // Check ELKA ack against known msg_id and msg_num
@@ -342,8 +396,8 @@ inline bool initial_msg(msg_id_t &msg_id) {
 // @param msg_id id of sent message
 // @param msg_num
 // @return message result if message correct
-//         elka_msg_ack_s::ACK_FAILED if message incorrect
-//         elka_msg_ack_s::ACK_NULL if ack not for u
+//         MSG_FAILED if message incorrect
+//         MSG_NULL if ack not for u
 uint8_t check_elka_ack(struct elka_msg_ack_s &elka_msg_ack,
     msg_id_t &msg_id, uint16_t &msg_num, uint8_t num_retries);
 
@@ -352,8 +406,8 @@ uint8_t check_elka_ack(struct elka_msg_ack_s &elka_msg_ack,
 // @param msg_id id of sent message
 // @param msg_num
 // @return message result if message correct
-//         elka_msg_ack_s::ACK_FAILED if message incorrect
-//         elka_msg_ack_s::ACK_NULL if ack not for u
+//         MSG_FAILED if message incorrect
+//         MSG_NULL if ack not for u
 uint8_t check_elka_ack(struct elka_msg_ack_s &elka_msg_ack,
     struct elka_msg_id_s &msg_id, uint16_t &msg_num, uint8_t num_retries);
 
@@ -430,7 +484,7 @@ inline bool deserialize_elka_msg(
 // Elka msg and Elka ack print methods
 void print_elka_msg_id(msg_id_t &msg_id);
 void print_elka_msg(elka_msg_s &elka_msg);
-void print_elka_msg_ack(elka_msg_ack_s &elka_msg);
+void print_elka_msg(elka_msg_ack_s &elka_msg);
 void print_elka_routing_msg(elka_msg_s &elka_msg);
 
 // Buffer print convenience methods

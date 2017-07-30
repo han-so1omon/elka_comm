@@ -6,40 +6,25 @@
 
 #include "snapdragon_uart_devices.h"
 
+uart::UARTPort *uart::UARTPort::_instance = nullptr;
+
 //-----------------Public Methods----------------------
 uart::UARTPort::UARTPort(uint8_t port_num, uint8_t buf_t,
     uint8_t size, char *dev_name)
   : elka::CommPort(port_num, PORT_UART, buf_t, size) {
 
+  strcpy(_dev_name, dev_name);
+
   get_snd_params(&_snd_params,
       port_num, PORT_UART, DEV_PROP_QURT_SIDE);
 
-  if (!(init() == PX4_OK)) {
-    PX4_ERR("Unable to initialize elka device %s",dev_name);
-    errno = ECANCELED;
-  } else {
-    strcpy(_dev_name, dev_name);
-  }
-}
-
-uart::UARTPort::~UARTPort() {
-  delete _tx_buf;
-  delete _rx_buf;
-
-  if (deinit() != PX4_OK) {
-    PX4_ERR("Unable to deinitialize elka device with %s",
-        _dev_name);
-  }
-}
-
-// Open UART port
-// @return PX4_OK on success, else PX4_ERROR
-int uart::UARTPort::init() {
   memset(&_input_rc, 0, sizeof(_input_rc));
   memset(&_elka_ack_snd, 0, sizeof(_elka_ack_snd));
   memset(&_elka_ack_rcv, 0, sizeof(_elka_ack_rcv));
+  memset(&_elka_ack_rcv_cmd, 0, sizeof(_elka_ack_rcv_cmd));
   memset(&_elka_snd, 0, sizeof(_elka_snd));
   memset(&_elka_rcv, 0, sizeof(_elka_rcv));
+  memset(&_elka_rcv_cmd, 0, sizeof(_elka_rcv_cmd));
 
   _elka_ack_pub = orb_advertise(
       ORB_ID(elka_msg_ack), &_elka_ack_snd);
@@ -54,20 +39,53 @@ int uart::UARTPort::init() {
   _routing_table[_id].add_prop(DEV_PROP_QURT_SIDE);
   _routing_table[_id].add_prop(DEV_PROP_SENSE_LOCATION);
   _routing_table[_id].add_prop(DEV_PROP_SPIN_MOTORS);
+  _routing_table[_id].add_prop(DEV_PROP_TRANSMISSION_CTL);
 
   start_port();
+
   if (open() == PX4_OK) {
-    PX4_INFO("Initialized Snapdragon UART device to communicate on port %s with fd %d",
+
+    assign_read_callback();
+
+    PX4_INFO("Initialized elka device to communicate on port %s with fd %d",
         _dev_name, _serial_fd);
-    return PX4_OK;
   } else {
-    return PX4_ERROR;
+    PX4_INFO("Unable to initialize elka device",
+        _dev_name, _serial_fd);
+    errno = ECANCELED;
   }
+}
+
+uart::UARTPort::~UARTPort() {
+  if (deinitialize() != PX4_OK) {
+    PX4_ERR("Unable to deinitialize elka device with %s",
+        _dev_name);
+  }
+
+  delete _tx_buf;
+  delete _rx_buf;
+}
+
+// Open UART port
+// @return PX4_OK on success, else PX4_ERROR
+int uart::UARTPort::initialize(
+    uint8_t port_num, uint8_t buf_t,
+    uint8_t size, char *dev_name) {
+  if (_instance == nullptr) {
+    _instance = new UARTPort(
+        port_num, buf_t, size, dev_name);
+  }
+
+  return _instance != nullptr;
+}
+
+bool uart::UARTPort::print_statistics(bool reset) {
+  return false;
 }
 
 // Close port access
 // @return PX4_OK on success, else PX4_ERROR
-int uart::UARTPort::deinit() {
+int uart::UARTPort::deinitialize() {
   stop_port();
   if (close() == PX4_OK)
     return PX4_OK;
@@ -97,6 +115,38 @@ int uart::UARTPort::assign_read_callback() {
 // Write to ELKA side
 int uart::UARTPort::write(elka_msg_s &elka_msg) {
   return write_elka_msg(_serial_fd, elka_msg);
+}
+
+uint8_t uart::UARTPort::parse_spektrum_msg(input_rc_s input_rc) {
+  static uint16_t spektrum_kill_prev=0, spektrum_switch_prev=0;
+  bool kill = false, switch_to_spektrum = false;
+  if ( input_rc.values[_spektrum_channel_kill] !=
+       spektrum_kill_prev &&
+       ( input_rc.values[_spektrum_channel_kill] > 
+         (SPEKTRUM_SWITCH_HIGH - SPEKTRUM_STICK_RANGE) ) &&
+       ( input_rc.values[_spektrum_channel_kill] <
+         (SPEKTRUM_SWITCH_HIGH + SPEKTRUM_STICK_RANGE) )
+     )
+    kill = true;
+
+  if ( input_rc.values[_spektrum_channel_switch] !=
+       spektrum_switch_prev &&
+       ( input_rc.values[_spektrum_channel_switch] > 
+         (SPEKTRUM_SWITCH_HIGH - SPEKTRUM_STICK_RANGE) ) &&
+       ( input_rc.values[_spektrum_channel_switch] <
+         (SPEKTRUM_SWITCH_HIGH + SPEKTRUM_STICK_RANGE) )
+     )
+    switch_to_spektrum = true;
+  
+  /*
+  PX4_INFO("kill value: %" PRIu16 " kills? %d\t\
+switch value: %" PRIu16 " switches? %d",
+          input_rc.values[_spektrum_channel_kill],
+          kill,
+          input_rc.values[_spektrum_channel_switch],
+          switch_to_spektrum);
+  */
+  return spektrum_ctl_port(kill, switch_to_spektrum);
 }
 
 uint8_t uart::UARTPort::add_msg(
@@ -130,17 +180,21 @@ uint8_t uart::UARTPort::add_msg(
   } else if (target_dev) {
     target_devs.push_back(*target_dev); 
   } else {
-    std::map<dev_id_t, elka::DeviceRoute, dev_id_tCmp>::iterator
-      dev_routes = _routing_table.begin();
+    std::map<dev_id_t,
+             elka::DeviceRoute,
+             dev_id_tCmp>::iterator
+        dev_routes = _routing_table.begin();
     for (; dev_routes != _routing_table.end(); dev_routes++) {
-      if ( check_dev_compatible(msg_type,
-                               dev_routes->first) )
+      if ( cmp_dev_id_t(dev_routes->first, _id) && 
+           check_dev_compatible(msg_type,
+                               dev_routes->first) ) {
         target_devs.push_back(dev_routes->first);
+      }
     }
   }
 
   std::vector<dev_id_t>::iterator curr_dev =
-    target_devs.begin();;
+    target_devs.begin();
   if (msg_type == MSG_ACK) {
     elka_msg_ack_s elka_msg;
 
@@ -155,7 +209,7 @@ uint8_t uart::UARTPort::add_msg(
 
       push_msg(elka_msg, true);
     }
-  } else {
+  } else if (msg_type != MSG_NULL) {
     elka_msg_s elka_msg;
     
     for (; curr_dev != target_devs.end(); curr_dev++) {
@@ -163,9 +217,8 @@ uint8_t uart::UARTPort::add_msg(
         _id, *curr_dev, _snd_params,
         msg_type, len);
 
-      // num_retries and msg_num not used if tx msg
-      //elka_msg.num_retries = num_retries;
-      //elka_msg.msg_num = msg_num;
+      elka_msg.num_retries = num_retries;
+      elka_msg.msg_num = msg_num;
       memcpy(elka_msg.data, data, len);
 
       push_msg(elka_msg, true);
@@ -191,6 +244,9 @@ uint8_t uart::UARTPort::set_dev_state_msg(
   set_state_msg(elka_snd,state,
       _id, dst_id,
       _snd_params, msg_t, MSG_STATE_LENGTH);
+  
+  elka_snd.msg_num = 0;
+  elka_snd.num_retries = 0;
 
   return state;
 }
@@ -252,8 +308,8 @@ uint8_t uart::UARTPort::send_msg(elka_msg_ack_s &elka_msg) {
   return msg_type;
 }
 
-uint8_t uart::UARTPort::parse_elka_msg(elka_msg_s &elka_msg,
-    elka_msg_ack_s &elka_ack) {
+uint8_t uart::UARTPort::parse_elka_msg(elka_msg_s &elka_msg) {
+  elka_msg_ack_s elka_ack;
   struct elka_msg_id_s msg_id;
   uint8_t parse_res;
   bool in_route;
@@ -266,7 +322,9 @@ uint8_t uart::UARTPort::parse_elka_msg(elka_msg_s &elka_msg,
   // to determine correct method of parsing message.
   if (( !(in_route = check_route(msg_id.rcv_id)) &&
         !broadcast_msg(msg_id.rcv_id) ) ||
-      initial_msg(elka_msg.msg_id)) {
+      initial_msg(elka_msg.msg_id,
+                  elka_msg.msg_num,
+                  elka_msg.num_retries)) {
     return MSG_NULL;
   } else if (in_route &&
              cmp_dev_id_t(msg_id.rcv_id, _id) &&
@@ -304,10 +362,45 @@ uint8_t uart::UARTPort::parse_elka_msg(elka_msg_s &elka_msg,
 
   // Send ack if necessary 
   if (parse_res & TYPE_EXPECTING_ACK) {
+    /*
+    PX4_INFO("in parse\tmsg_num: %" PRIu16 " num_retries: %d\n\
+ack msg_num: %" PRIu16 " ack num_retries: %d",
+        elka_msg.msg_num, elka_msg.num_retries,
+        elka_ack.msg_num, elka_ack.num_retries);
+        */
     push_msg(elka_ack, true);
   }
 
   return parse_res;
+}
+
+uint8_t uart::UARTPort::parse_elka_msg(elka_msg_ack_s &elka_msg) {
+  dev_id_t snd_id, rcv_id;
+  bool in_route;
+
+  get_elka_msg_id_attr(&snd_id, &rcv_id,
+                       NULL, NULL, NULL,
+                       elka_msg.msg_id);
+
+  // Check that device can be reached.
+  // If message is not meant for you, then push it thru.
+  // If message is meant for you, then check message type
+  // to determine correct method of parsing message.
+  if (!(in_route = check_route(rcv_id))) {
+    return MSG_NULL;
+  } else if (in_route &&
+             cmp_dev_id_t(rcv_id, _id) &&
+             cmp_dev_id_t(snd_id, _id)) {
+    // Push message along if:
+    //    It can be reached 
+    //    It is not for you
+    //    It is not from you (avoid creating cycle in graph)
+    return push_msg(elka_msg, true);
+  } else if (check_ack(elka_msg)
+      == MSG_FAILED) {
+    return MSG_FAILED;
+  } else 
+    return MSG_ACK;
 }
 
 // Helper functions for parsing returned elka message based on current state
@@ -324,97 +417,148 @@ uint8_t uart::UARTPort::parse_elka_msg(elka_msg_s &elka_msg,
 uint8_t uart::UARTPort::parse_motor_cmd(elka_msg_s &elka_msg,
                         elka_msg_ack_s &elka_ack,
                         struct elka_msg_id_s &msg_id) {
-  uint8_t msg_type;
-  get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
-      elka_msg.msg_id);
-
-  return MSG_FAILED;
+  switch (_sw_state) {
+    case SW_CTL_SPEKTRUM:
+      return MSG_DENIED;
+      break;
+    case SW_CTL_KILL:
+      return MSG_DENIED;
+      break;
+    case SW_CTL_REMOTE:
+      return push_msg(elka_msg, true);
+      break;
+    case SW_CTL_AUTOPILOT:
+      return push_msg(elka_msg, true);
+      break;
+    default:
+      return MSG_FAILED;
+      break;
+  }
 }
 
 uint8_t uart::UARTPort::parse_port_ctl(elka_msg_s &elka_msg,
-                       elka_msg_ack_s &elka_ack,
-                       struct elka_msg_id_s &msg_id) {
-  uint8_t ret;
-  get_elka_msg_id_attr(NULL, NULL, NULL, &ret, NULL,
-      elka_msg.msg_id);
-     
+                        elka_msg_ack_s &elka_ack,
+                        struct elka_msg_id_s &msg_id) {
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
+
   elka_ack.msg_num = elka_msg.msg_num;
+  elka_ack.num_retries = elka_msg.num_retries;
 
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
-  elka_ack.num_retries = elka_msg.num_retries;
-  return ret;
+  if (request) {
+    switch (action) {
+      case HW_CTL_START:
+        elka_ack.result = start_port();
+        break;
+      case HW_CTL_STOP:
+        elka_ack.result = stop_port();
+        break;
+      case HW_CTL_PAUSE:
+        elka_ack.result = pause_port();
+        break;
+      case HW_CTL_RESUME:
+        elka_ack.result = resume_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
+        return MSG_FAILED;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
+  }
+
+  return msg_id.type;
 }
 
 uint8_t uart::UARTPort::parse_elka_ctl(elka_msg_s &elka_msg,
-                       elka_msg_ack_s &elka_ack,
-                       struct elka_msg_id_s &msg_id) {
-  uint8_t ret;
-  get_elka_msg_id_attr(NULL, NULL, NULL, &ret, NULL,
-      elka_msg.msg_id);
-     
+                        elka_msg_ack_s &elka_ack,
+                        struct elka_msg_id_s &msg_id) {
+  uint8_t action = elka_msg.data[1];
+  bool request = elka_msg.data[0];
+  
   elka_ack.msg_num = elka_msg.msg_num;
+  elka_ack.num_retries = elka_msg.num_retries;
 
   get_elka_msg_id(&elka_ack.msg_id,
       msg_id.rcv_id, msg_id.snd_id,
       msg_id.snd_params,
       MSG_ACK, MSG_ACK_LENGTH);
 
-  elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
-  elka_ack.num_retries = elka_msg.num_retries;
+  if (request) {
+    switch (action) {
+      case SW_CTL_REMOTE:
+        elka_ack.result = remote_ctl_port();
+        break;
+      case SW_CTL_AUTOPILOT:
+        elka_ack.result = autopilot_ctl_port();
+        break;
+      default:
+        elka_ack.result = MSG_UNSUPPORTED;
+        return MSG_FAILED;
+        break;
+    }
+  } else {
+    //TODO keep track of device states
+  }
 
-  return ret;
+  print_elka_ctl_msg(elka_msg);
+  print_elka_state();
+
+  return msg_id.type;
 }
 
 // Check ack with most recent sent message
 // Check ack with respect to port number from elka_ack.msg_id
 uint8_t uart::UARTPort::check_ack(struct elka_msg_ack_s &elka_ack) {
   elka::SerialBuffer *sb;
-  struct elka_msg_id_s msg_id;
+  struct elka_msg_id_s ack_id;
   uint8_t ret;
 
-  get_elka_msg_id_attr(&msg_id, elka_ack.msg_id);
+  get_elka_msg_id_attr(&ack_id, elka_ack.msg_id);
 
   // Check that ack is meant for this device
-  if (!cmp_dev_id_t(msg_id.rcv_id, _id)) {
-    return elka_msg_ack_s::ACK_NULL;
+  if (cmp_dev_id_t(ack_id.rcv_id, _id)) {
+    return MSG_NULL;
   } else {
     sb = _tx_buf;
   }
-
+ 
   // First check if message number has recently been acked
   // If message has recently been acked then
-  // return elka_msg_ack_s::ACK_NULL
+  // return MSG_NULL
   // Else then check if message exists in buffer
   //    If message exists, then return check_elka_ack(...)
   //        Then add message number to list of recently acked messages
   //        Then remove message from buffer
-  //    Else return elka_msg_ack_s::ACK_NULL
+  //    Else return MSG_NULL
   if ((ret = sb->check_recent_acks(elka_ack.msg_num)) !=
-              elka_msg_ack_s::ACK_NULL) {
+              MSG_NULL) {
+    msg_id_t erase_msg_id;
     elka::ElkaBufferMsg *ebm;
+   
     if ((ebm = sb->get_buffer_msg(
-            elka_ack.msg_id, elka_ack.msg_num, false))) {
+            ack_id.rcv_id, ack_id.snd_id, elka_ack.msg_num))) {
       if ( (ret = check_elka_ack(elka_ack,
                   ebm->_msg_id,
                   ebm->_rmv_msg_num,
                   ebm->_num_retries)) ==
-           elka_msg_ack_s::ACK_FAILED) {
+           MSG_FAILED) {
         PX4_WARN("Ack failed msg_id %d msg_num %d. %d retries",
             ebm->_msg_id, ebm->_rmv_msg_num,
             ebm->_num_retries);
-      } else if (ret != elka_msg_ack_s::ACK_NULL) {
+      } else if (ret != MSG_NULL) {
         // Message received and processed fine, so erase it
-        PX4_INFO("erasing message");
-        sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num, false);
+        erase_msg_id = ebm->_msg_id;
+        //sb->erase_msg(elka_ack.msg_id, elka_ack.msg_num);
+        sb->erase_msg(erase_msg_id, elka_ack.msg_num);
         sb->push_recent_acks(elka_ack.msg_num);
       }
-    } else {
-      ret = elka_msg_ack_s::ACK_NULL;
     }
   }
 
@@ -427,24 +571,106 @@ void uart::UARTPort::update_time() {
 }
 
 //-----------------Private Methods---------------------
-bool uart::UARTPort::start_port() {
-  _state = STATE_START;
-  _state = STATE_RESUME;
-  return true;
+uint8_t uart::UARTPort::start_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_START;
+  _prev_hw_state = tmp_state;
+
+  //FIXME determine client or server programattically
+  // For client
+  /*
+  socket_proc_start(
+      &_inet_proc,
+      "192.168.1.1",
+      CLIENT,
+      _tx_buf,
+      _rx_buf);
+  
+  // For server
+  socket_proc_start(
+      &_inet_proc,
+      NULL,
+      SERVER,
+      _tx_buf,
+      _rx_buf);
+  */
+
+  return resume_port();
 }
 
-bool uart::UARTPort::stop_port() {
-  _state = STATE_STOP;
-  return true;
+uint8_t uart::UARTPort::stop_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_STOP;
+  _prev_hw_state = tmp_state;
+  
+  //wait_for_child(&_inet_proc);
+
+  return MSG_ACCEPTED;
 }
 
-bool uart::UARTPort::pause_port() {
-  _state = STATE_PAUSE;
-  return true;
+uint8_t uart::UARTPort::pause_port() {
+  uint8_t tmp_state = _hw_state;
+
+  _hw_state = HW_CTL_PAUSE;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
 }
 
-bool uart::UARTPort::resume_port() {
-  _state = STATE_RESUME;
-  return true;
+uint8_t uart::UARTPort::resume_port() {
+  uint8_t tmp_state = _hw_state;
+  
+  _hw_state = HW_CTL_RESUME;
+  _prev_hw_state = tmp_state;
+
+  return MSG_ACCEPTED;
 }
 
+uint8_t uart::UARTPort::remote_ctl_port() {
+  uint8_t tmp_state = _sw_state;
+
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_REMOTE;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
+
+  return MSG_ACCEPTED;
+
+}
+
+uint8_t uart::UARTPort::autopilot_ctl_port() {
+  uint8_t tmp_state = _sw_state;
+  
+  if (_sw_state != SW_CTL_KILL && _sw_state != SW_CTL_SPEKTRUM) {
+    _sw_state = SW_CTL_AUTOPILOT;
+    _prev_sw_state = tmp_state;
+  } else return SW_CTL_FAILED;
+
+  return MSG_ACCEPTED;
+}
+
+//NOTE DO NOT SET _prev_sw_state here!!
+//If you do this, you will only be able to transition between
+//SW_CTL_SPEKTRUM and SW_CTL_KILL
+uint8_t uart::UARTPort::spektrum_ctl_port(
+    bool kill,
+    bool switch_to_spektrum) {
+  uint8_t tmp_state=0;
+  // Prioritize kill switch
+  // If switching to neither SPEKTRUM nor KILL, then switch to
+  // previous state not SPEKTRUM or KILL
+  if (kill) {
+    _sw_state = SW_CTL_KILL;
+  } else if (switch_to_spektrum) {
+    _sw_state = SW_CTL_SPEKTRUM;
+  } else {
+    _sw_state = _prev_sw_state;
+  }
+
+  //TODO demo
+  _prev_sw_state = tmp_state;
+
+  return MSG_ACCEPTED;
+}

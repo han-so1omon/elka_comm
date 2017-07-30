@@ -7,6 +7,11 @@
 #include <px4_defines.h>
 #include <px4_log.h>
 
+#elif defined (__ELKA_UBUNTU)
+
+#include <pybind11/pybind11.h>
+namespace py = pybind11;
+
 #endif
 
 #include <elka_log.h>
@@ -50,7 +55,7 @@ ElkaBufferMsg(elka_msg_ack_s &msg) {
 
 elka::ElkaBufferMsg::ElkaBufferMsg(msg_id_t msg_id,
     uint16_t push_msg_num, uint16_t rmv_msg_num,
-    uint8_t *data) {
+    uint8_t num_retries, uint8_t *data) {
   uint8_t msg_len;
   _msg_id = msg_id;
   get_elka_msg_id_attr(NULL,NULL,NULL,NULL,
@@ -58,7 +63,7 @@ elka::ElkaBufferMsg::ElkaBufferMsg(msg_id_t msg_id,
   _push_msg_num = push_msg_num;
   _rmv_msg_num = rmv_msg_num;
   memcpy(_data, data, msg_len);
-  _num_retries = 0;
+  _num_retries = num_retries;
   _expecting_ack = msg_id & ID_EXPECTING_ACK;
 }
 
@@ -86,6 +91,7 @@ uint8_t elka::ElkaBufferMsg::get_result() {
 
 elka::SerialBuffer::SerialBuffer(dev_id_t port_id,
     uint8_t buf_type, uint16_t size) {
+  _buffer.clear();
   _port_id = port_id;
   _comp = Compare();
   _type = buf_type;
@@ -103,16 +109,25 @@ elka::SerialBuffer::SerialBuffer(dev_id_t port_id,
     LOG_ERR("Unsupported buffer type");
     errno = EINVAL;
   }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  _buf_mutex = PTHREAD_MUTEX_INITIALIZER;
+  pthread_mutex_init(&_buf_mutex,NULL);
+
+#endif
 }
 
 elka::SerialBuffer::~SerialBuffer() {
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_destroy(&_buf_mutex);
+#endif
 }
 
 uint8_t elka::SerialBuffer::check_recent_acks(uint16_t msg_num) {
   int idx = cb_bin_search(msg_num, _recent_acks,
     _recent_acks_end, _recent_acks_len, RECENT_ACKS_LEN);
-  if (idx < 0) return elka_msg_ack_s::ACK_FAILED;
-  else return elka_msg_ack_s::ACK_NULL;
+  if (idx < 0) return MSG_FAILED;
+  else return MSG_NULL;
 }
 
 void elka::SerialBuffer::push_recent_acks(uint16_t msg_num) {
@@ -146,66 +161,79 @@ uint8_t elka::SerialBuffer::push_msg(
     uint8_t *data,
     uint16_t rmv_msg_num,
     uint8_t num_retries) {
-  uint8_t msg_type;
-  // Check if message is already in the buffer.
-  // If so just update num_retries
-  // This prevents redundant messages from being added
-  // FIXME
-  /*
   ElkaBufferMsg *ebm;
-  if ((ebm = get_buffer_msg(msg_num))) {
-    ebm->_num_retries = num_retries;
-  } else {
-  */
-
-    if (_type == ARRAY) {
-      _buffer.push_back(ElkaBufferMsg(
-            msg_id, _push_msg_num++, rmv_msg_num, data));
-      if (_buffer.size() > _max_size) {
-        _buffer.pop_back();
-      }
-    } else if (_type == PRIORITY_QUEUE) {
-      _buffer.push_back(ElkaBufferMsg(
-            msg_id, _push_msg_num++, rmv_msg_num, data));
-      std::push_heap(_buffer.begin(), _buffer.end(), _comp);
-      // Priority queue is fixed size
-      if (_buffer.size() > _max_size) {
-        std::pop_heap(_buffer.begin(), _buffer.end(), _comp);
-        _buffer.pop_back();
-      }
-    } else {
-      return MSG_FAILED;
-    }
-
-    // Set _push_msg_num to follow msg_num
-    // for next time that a message is pushed
-    // Useful for sorting in the buffer
-    // FIXME This may cause a lot of redundant message numbers
-    //       It should be the case that no message has the same
-    //       msg_num and msg_id (except for msg_num rollover)
-    // _push_msg_num = msg_num + 1;
-  //}
+  uint8_t msg_type = MSG_FAILED;
 
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       msg_id);
+
+  // If message w/matching msg_id & rmv_msg_num is already in
+  // buffer, change num_retries and return msg_type
+  // TODO What if data is different?
+  if ((ebm = get_buffer_msg(msg_id, rmv_msg_num)) != nullptr) {
+    ebm->_num_retries = num_retries;
+    return msg_type;
+  }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
+
+  if (_type == ARRAY) {
+    _buffer.push_back(ElkaBufferMsg(
+          msg_id, _push_msg_num++, rmv_msg_num,
+          num_retries, data));
+    if (_buffer.size() > _max_size) {
+      _buffer.pop_back();
+    }
+  } else if (_type == PRIORITY_QUEUE) {
+    _buffer.push_back(ElkaBufferMsg(
+          msg_id, _push_msg_num++, rmv_msg_num,
+          num_retries, data));
+    std::push_heap(_buffer.begin(), _buffer.end(), _comp);
+    // Priority queue is fixed size
+    if (_buffer.size() > _max_size) {
+      std::pop_heap(_buffer.begin(), _buffer.end(), _comp);
+      _buffer.pop_back();
+    }
+  }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+
   return msg_type;
 }
 
 uint8_t elka::SerialBuffer::get_msg(
     elka_msg_s &elka_msg,
-    elka_msg_ack_s &elka_msg_ack,
-    bool tx) {
+    elka_msg_ack_s &elka_msg_ack) {
   dev_id_t snd_id; 
-  uint8_t ret, msg_len, front_msg_type;
-  // Ensure that buffer isn't empty and that front of buffer is not ACK
+  uint8_t ret=MSG_FAILED, msg_len, front_msg_type;
+
+  // Ensure that buffer isn't empty 
+  // Pop messages that have been tried too many times
   if (_buffer.empty()) return MSG_NULL;
+  while (_buffer.front()._num_retries > MAX_NUM_RETRIES) {
+    pop_msg();
+    if (_buffer.empty()) return MSG_NULL;
+  }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   // Get message type for message at front of buffer
   front_msg_type = buffer_front_type();
-
-  // Pop messages that have been tried too many times
-  while (_buffer.front()._num_retries > MAX_NUM_RETRIES)
-    pop_msg();
 
   if (front_msg_type != MSG_ACK) {
     elka_msg.msg_id = _buffer.front()._msg_id;
@@ -225,49 +253,74 @@ uint8_t elka::SerialBuffer::get_msg(
   if (_buffer.front()._num_retries == 0 &&
       _buffer.front()._rmv_msg_num == 0 &&
       !cmp_dev_id_t(_port_id, snd_id)) {
-    //if (tx)
-      _buffer.front()._rmv_msg_num = _rmv_msg_num++;
-    /*
-    else
-      _buffer.front()._rmv_msg_num = _buffer.front()._push_msg_num;
-      */
+    _buffer.front()._rmv_msg_num = get_nxt_msg_num();
   }
 
   if (front_msg_type != MSG_ACK) {
     elka_msg.msg_num = _buffer.front()._rmv_msg_num;
     elka_msg.num_retries = _buffer.front()._num_retries++;
     memcpy(elka_msg.data, _buffer.front()._data, msg_len);
+
+    /*
+    LOG_INFO("in get\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg.msg_num,
+      elka_msg.num_retries);
+      */
   } else {
     elka_msg_ack.msg_num = _buffer.front()._rmv_msg_num;
-    elka_msg_ack.num_retries = _buffer.front()._num_retries++;
+    elka_msg_ack.num_retries = _buffer.front()._num_retries;
     // This will return MSG_NULL if the message is not of MSG_ACK type
     elka_msg_ack.result = _buffer.front().get_result();
+
+    /*
+    LOG_INFO("in get ack\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg_ack.msg_num,
+      elka_msg_ack.num_retries);
+      */
   }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   return ret;
 }
 
 //FIXME fix qurt side
 elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
-    msg_id_t msg_id, uint16_t msg_num, bool tx) {
+    msg_id_t msg_id, uint16_t msg_num) {
+  elka::ElkaBufferMsg *ebm = nullptr;
 //#if defined(__PX4_QURT)
-  dev_id_t buf_snd_id, msg_snd_id;
 
-  if (tx)
-    get_elka_msg_id_attr(&msg_snd_id, NULL, NULL, NULL, NULL, msg_id);
-  else
-    get_elka_msg_id_attr(NULL, &msg_snd_id, NULL, NULL, NULL, msg_id);
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
-  for (std::vector<ElkaBufferMsg>::iterator it = _buffer.begin();
+  for (std::vector<ElkaBufferMsg>::iterator it =
+        _buffer.begin();
        it != _buffer.end(); it++) {
-    if (it->_rmv_msg_num == msg_num) {
-      get_elka_msg_id_attr(&buf_snd_id,
-          NULL, NULL, NULL, NULL, it->_msg_id);
-      if (!cmp_dev_id_t(buf_snd_id, msg_snd_id))
-        return &(*it);
+    if (msg_num != 0 &&
+        it->_rmv_msg_num == msg_num &&
+        !cmp_msg_id_t(msg_id, it->_msg_id)) {
+      ebm = &(*it);
+      break;
     }
   }
-  return NULL;
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+
+  return ebm;
 
   /*
 #elif defined(__PX4_POSIX)
@@ -284,24 +337,78 @@ elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
 */
 }
 
+elka::ElkaBufferMsg *elka::SerialBuffer::get_buffer_msg(
+    dev_id_t snd_id,
+    dev_id_t rcv_id,
+    uint16_t msg_num) {
+  elka::ElkaBufferMsg *ebm = nullptr;
+  dev_id_t msg_snd_id, msg_rcv_id;
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
+
+  for (std::vector<ElkaBufferMsg>::iterator it =
+        _buffer.begin();
+       it != _buffer.end(); it++) {
+    get_elka_msg_id_attr(
+        &msg_snd_id, &msg_rcv_id,
+        NULL, NULL, NULL,
+        it->_msg_id);
+
+    if (msg_num != 0 &&
+        it->_rmv_msg_num == msg_num &&
+        !cmp_dev_id_t(snd_id, msg_snd_id) &&
+        !cmp_dev_id_t(rcv_id, msg_rcv_id)) {
+      ebm = &(*it);
+    }
+  }
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+  return ebm;
+}
+
 // TODO necessary to set time stamps?
 uint8_t elka::SerialBuffer::remove_msg(
     elka_msg_s &elka_msg,
-    elka_msg_ack_s &elka_msg_ack,
-    bool tx) {
-  uint8_t ret;
+    elka_msg_ack_s &elka_msg_ack) {
+  msg_id_t msg_id;
+  uint16_t msg_num;
+  uint8_t ret = MSG_FAILED;
 
-  ret = get_msg(elka_msg,elka_msg_ack,tx);
-  if (pop_msg() != MSG_FAILED)
-    return ret;
-  else
-    return MSG_FAILED;
+  ret = get_msg(elka_msg,elka_msg_ack);
+
+  if (ret == MSG_ACK) {
+    msg_id = elka_msg_ack.msg_id;
+    msg_num = elka_msg_ack.msg_num;
+  } else {
+    msg_id = elka_msg.msg_id;
+    msg_num = elka_msg.msg_num;
+  }
+
+  erase_msg(msg_id, msg_num);
+  return ret;
 }
 
 uint8_t elka::SerialBuffer::pop_msg() {
   uint8_t ret;
+
   // Ensure that buffer isn't empty
   if (_buffer.empty()) return MSG_NULL;
+
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
 
   if (_type == ARRAY) {
     _buffer.erase(_buffer.begin());
@@ -314,35 +421,43 @@ uint8_t elka::SerialBuffer::pop_msg() {
     ret = MSG_FAILED;
   }
 
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
+
   return ret;
 }
 
 //FIXME fix qurt side
-void elka::SerialBuffer::erase_msg(msg_id_t msg_id, uint16_t msg_num,
-    bool tx) {
-  dev_id_t buf_snd_id, msg_snd_id;
-
-  if (tx)
-    get_elka_msg_id_attr(&msg_snd_id, NULL, NULL, NULL, NULL, msg_id);
-  else
-    get_elka_msg_id_attr(NULL, &msg_snd_id, NULL, NULL, NULL, msg_id);
-
+void elka::SerialBuffer::erase_msg(
+    msg_id_t msg_id, uint16_t msg_num) {
 //#if defined(__PX4_QURT)
   // Search beginning at end of array bc this should be closer to
   // msg_num in most expected use cases
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_lock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_acquire acquire;
+  //Py_BEGIN_ALLOW_THREADS
+#endif
   for (std::vector<ElkaBufferMsg>::reverse_iterator it =
        _buffer.rbegin();
        it != _buffer.rend(); it++) {
-    if (it->_rmv_msg_num == msg_num) {
-      get_elka_msg_id_attr(&buf_snd_id,
-          NULL, NULL, NULL, NULL, it->_msg_id);
-      if (!cmp_dev_id_t(buf_snd_id, msg_snd_id)) {
-        LOG_INFO("erasing msg here");
-        _buffer.erase(--(it.base()));
-        break;
-      }
+    if (it->_rmv_msg_num == msg_num &&
+        !cmp_msg_id_t(msg_id, it->_msg_id)) {
+      _buffer.erase(--(it.base()));
+      break;
     }
   }
+#if defined(__PX4_QURT) || defined(__PX4_POSIX)
+  pthread_mutex_unlock(&_buf_mutex);
+#elif defined (__ELKA_UBUNTU)
+  //py::gil_scoped_release release;
+  //Py_END_ALLOW_THREADS
+#endif
 
   /*
 #elif defined(__PX4_POSIX)
@@ -418,9 +533,9 @@ bool elka::SerialBuffer::Compare::operator()
   /*
   LOG_INFO("push up? %s", ((msg_priority(p_type) < msg_priority(q_type)) &&
           p._push_msg_num < q._push_msg_num) ? "true" : "false");
-          */
-  return ((msg_priority(p_type) < msg_priority(q_type)) &&
-          p._push_msg_num < q._push_msg_num);
+         */
+  return msg_priority(p_type) > msg_priority(q_type) ?
+          true : p._push_msg_num > q._push_msg_num;
 }
 
 //-----------------DeviceRoute Methods---------------------
@@ -546,10 +661,25 @@ elka::CommPort::CommPort(uint8_t port_n, uint8_t port_t,
   _tx_buf = new SerialBuffer(_id,buf_t,size);
   _rx_buf = new SerialBuffer(_id,buf_t,size);
 
-  _state = STATE_STOP;
+  _hw_state = HW_CTL_STOP;
+  _sw_state = SW_CTL_NULL;
+
+  _prev_hw_state = HW_CTL_NULL;
+  _prev_sw_state = SW_CTL_NULL;
+
+  // Set spektrum killswitch to channel 5 (back left)
+  _spektrum_channel_kill = 4;
+  // Set spektrum switch (switch to spektrum) to channel 6
+  _spektrum_channel_switch = 5;
+
 }
 
 elka::CommPort::~CommPort() {
+}
+
+uint8_t elka::CommPort::get_state(bool hw) {
+  if (hw) return _hw_state;
+  else return _sw_state;
 }
 
 /*
@@ -582,7 +712,9 @@ uint8_t elka::CommPort::push_msg(
 }
 */
 
-uint8_t elka::CommPort::push_msg(elka_msg_s &elka_msg, bool tx) {
+uint8_t elka::CommPort::push_msg(
+    elka_msg_s &elka_msg,
+    bool tx) {
   elka::SerialBuffer *sb;
   struct elka_msg_id_s msg_id;
 
@@ -590,16 +722,34 @@ uint8_t elka::CommPort::push_msg(elka_msg_s &elka_msg, bool tx) {
 
   // TODO what if device sending this message is deleted
   //      from routing table as message is being sent to you?
-  if ((!broadcast_msg(msg_id.rcv_id) && !check_route(msg_id.rcv_id))
-      || initial_msg(elka_msg.msg_id))
+  if ((!broadcast_msg(msg_id.rcv_id) &&
+       !check_route(msg_id.rcv_id))
+      || initial_msg(elka_msg.msg_id,
+                     elka_msg.msg_num,
+                     elka_msg.num_retries)) {
     return MSG_NULL;
+  }    
 
   if (tx) {
     sb = _tx_buf;
+
+    /*
+    LOG_INFO("in commport tx push\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg.msg_num,
+      elka_msg.num_retries);
+      */
+
     return sb->push_msg(elka_msg);
   } else  {
     // Specify msg_num and num_retries
     sb = _rx_buf;
+
+    /*
+    LOG_INFO("in commport rx push\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg.msg_num,
+      elka_msg.num_retries);
+      */
+
     return sb->push_msg(elka_msg.msg_id, elka_msg.data,
         elka_msg.msg_num, elka_msg.num_retries);
   }
@@ -616,15 +766,30 @@ uint8_t elka::CommPort::push_msg(
 
   // TODO what if device sending this message is deleted
   //      from routing table as message is being sent to you?
-  if ((!broadcast_msg(msg_id.rcv_id) && !check_route(msg_id.rcv_id))
-      || initial_msg(elka_msg.msg_id))
+  if ((!broadcast_msg(msg_id.rcv_id) &&
+       !check_route(msg_id.rcv_id))
+      || initial_msg(elka_msg.msg_id,
+                     elka_msg.msg_num,
+                     elka_msg.num_retries))
     return MSG_NULL;
 
   if (tx) {
     sb = _tx_buf;
+
+    /*
+   LOG_INFO("in commport tx ack push\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg.msg_num,
+      elka_msg.num_retries);
+      */
   } else  {
     // Specify msg_num and num_retries
     sb = _rx_buf;
+
+    /*
+    LOG_INFO("in commport rx ack push\tmsg_num: %" PRIu16 " num_retries: %d",
+      elka_msg.msg_num,
+      elka_msg.num_retries);
+      */
   }
 
   memset(data,elka_msg.result,1);
@@ -645,7 +810,7 @@ uint8_t elka::CommPort::get_msg(
     sb = _rx_buf;
   }
 
-  return sb->get_msg(elka_msg, elka_msg_ack, tx);
+  return sb->get_msg(elka_msg, elka_msg_ack);
 }
 
 // Message numbers must be incremented upon message removal b/c
@@ -662,7 +827,7 @@ uint8_t elka::CommPort::remove_msg(
     sb = _rx_buf;
   }
 
-  return sb->remove_msg(elka_msg, elka_msg_ack, tx);
+  return sb->remove_msg(elka_msg, elka_msg_ack);
 }
 
 uint8_t elka::CommPort::pop_msg(bool tx) {
@@ -677,6 +842,19 @@ uint8_t elka::CommPort::pop_msg(bool tx) {
   return sb->pop_msg();
 }
 
+void elka::CommPort::erase_msg(
+    msg_id_t msg_id, uint16_t msg_num, bool tx) {
+  elka::SerialBuffer *sb;
+
+  if (tx) {
+    sb = _tx_buf;
+  } else {
+    sb = _rx_buf;
+  }
+
+  sb->erase_msg(msg_id, msg_num);
+}
+
 uint8_t elka::CommPort::parse_routing_msg(
     elka_msg_s &elka_msg,
     struct elka_msg_id_s &msg_id,
@@ -684,7 +862,7 @@ uint8_t elka::CommPort::parse_routing_msg(
     elka_msg_s &ret_routing_msg) {
 
   //FIXME debugging
-  elka::CommPort::print_elka_route_msg(elka_msg);
+  //elka::CommPort::print_elka_route_msg(elka_msg);
 
   if (msg_id.type == MSG_ROUTE_DEV_PROPS) {
     std::vector<dev_prop_t> props;
@@ -788,7 +966,7 @@ uint8_t elka::CommPort::parse_routing_msg(
         _snd_params,
         MSG_ACK, MSG_ACK_LENGTH);
 
-    elka_ack.result = elka_msg_ack_s::ACK_UNSUPPORTED;
+    elka_ack.result = MSG_UNSUPPORTED;
 
     // Set and push response message if requested
     if (req_resp) {
@@ -865,7 +1043,7 @@ uint8_t elka::CommPort::parse_routing_msg(
         _snd_params,
         MSG_ACK, MSG_ACK_LENGTH);
 
-    elka_ack.result = elka_msg_ack_s::ACK_ACCEPTED;
+    elka_ack.result = MSG_ACCEPTED;
     
     // Set and push response message if requested
     if (req_resp) {
@@ -876,12 +1054,6 @@ uint8_t elka::CommPort::parse_routing_msg(
       _tx_buf->push_msg(ret_routing_msg);
     }
   }
-
-  /*
-  elka::CommPort::print_elka_route_msg(elka_msg);
-  */
-
-  elka::CommPort::print_routing_table(_routing_table);
 
   return msg_id.type;
 }
@@ -1054,6 +1226,12 @@ void elka::CommPort::set_dev_props_msg(
   get_elka_msg_id(&ret_routing_msg.msg_id,
     snd_id, rcv_id, _snd_params,
     MSG_ROUTE_DEV_PROPS, len);
+
+  // Set ret_routing_msg.msg_num and ret_routing_msg.num_retries
+  // to 0 so that message is assigned the next msg number upon
+  // removal from buffer
+  ret_routing_msg.msg_num = 0;
+  ret_routing_msg.num_retries = 0;
 }
 
 //FIXME need some internal caching/mapping of which
@@ -1148,7 +1326,8 @@ bool elka::CommPort::check_dev_compatible(
     uint8_t msg_type,
     dev_id_t dst) {
   // Check route to see that dst can be reached
-  if (!check_route(dst))
+  // and that dst is not this device
+  if (!check_route(dst) || !cmp_dev_id_t(_id, dst))
     return false;
 
   //TODO set static variable to map device properties
@@ -1167,23 +1346,17 @@ bool elka::CommPort::check_dev_compatible(
       return true;
       break;
     case MSG_MOTOR_CMD:
-      return (check_route(_id) &&
-              check_route(dst) &&
-              _routing_table[_id].check_prop(
+      return (_routing_table[_id].check_prop(
                 DEV_PROP_SPIN_MOTORS) &&
               _routing_table[dst].check_prop(
                 DEV_PROP_HAS_MOTORS));
       break;
     case MSG_PORT_CTL:
-      return (check_route(_id) &&
-              check_route(dst) &&
-              _routing_table[_id].check_prop(
+      return (_routing_table[_id].check_prop(
                 DEV_PROP_TRANSMISSION_CTL));
       break;
     case MSG_ELKA_CTL:
-      return (check_route(_id) &&
-              check_route(dst) &&
-              _routing_table[_id].check_prop(
+      return (_routing_table[_id].check_prop(
                 DEV_PROP_TRANSMISSION_CTL));
       break;
     default:
@@ -1200,7 +1373,9 @@ void elka::CommPort::print_elka_route_msg(elka_msg_s &elka_msg) {
   get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
       elka_msg.msg_id);
   
-  LOG_INFO("----- ELKA route message");
+  LOG_INFO("-----ELKA route message-----\n\
+# %" PRIu16 ", retries: %" PRIu16 "",
+           elka_msg.msg_num, elka_msg.num_retries);
   print_elka_msg_id(elka_msg.msg_id);
 
   switch(msg_type) {
@@ -1215,7 +1390,7 @@ void elka::CommPort::print_elka_route_msg(elka_msg_s &elka_msg) {
       print_routing_table(routing_table);
       break;
     case MSG_ROUTE_DEV_PROPS:
-      LOG_INFO("\tRouting table message");
+      LOG_INFO("\tDev props message");
       req_resp = elka_msg.data[0];
       num_els = elka_msg.data[1];
       LOG_INFO("\tRequesting response: %d", req_resp);
@@ -1243,4 +1418,145 @@ void elka::CommPort::print_routing_table(
     elka::DeviceRoute::print_dev_props(
         it_route_table->second._props);
   }
+}
+
+void elka::CommPort::print_elka_ctl_msg(elka_msg_s &elka_msg) {
+  char msg_type_name[42], request[42], state[42];
+  uint8_t msg_type;
+
+  get_elka_msg_id_attr(NULL, NULL, NULL, &msg_type, NULL,
+      elka_msg.msg_id);
+  
+  LOG_INFO("-----ELKA ctl message-----\n\
+# %" PRIu16 ", retries: %" PRIu16 "",
+           elka_msg.msg_num, elka_msg.num_retries);
+  print_elka_msg_id(elka_msg.msg_id);
+
+  switch(msg_type) {
+    case MSG_PORT_CTL:
+      sprintf(msg_type_name, "PORT_CTL");
+
+        switch(elka_msg.data[1]) {
+          case HW_CTL_NULL:
+            sprintf(state, "NULL");
+            break;
+          case HW_CTL_FAILED:
+            sprintf(state, "FAILED");
+            break;
+          case HW_CTL_START:
+            sprintf(state, "START");
+            break;
+          case HW_CTL_STOP:
+            sprintf(state, "STOP");
+            break;
+          case HW_CTL_PAUSE:
+            sprintf(state, "PAUSE");
+            break;
+          case HW_CTL_RESUME:
+            sprintf(state, "RESUME");
+            break;
+          default:
+            break;
+        }
+
+      break;
+    case MSG_ELKA_CTL:
+      sprintf(msg_type_name, "ELKA_CTL");
+
+        switch(elka_msg.data[1]) {
+          case SW_CTL_NULL:
+            sprintf(state, "NULL");
+            break;
+          case SW_CTL_FAILED:
+            sprintf(state, "FAILED");
+            break;
+          case SW_CTL_REMOTE:
+            sprintf(state, "REMOTE");
+            break;
+          case SW_CTL_SPEKTRUM:
+            sprintf(state, "SPEKTRUM");
+            break;
+          case SW_CTL_AUTOPILOT:
+            sprintf(state, "AUTOPILOT");
+            break;
+          default:
+            break;
+        }
+
+      break;
+    default:
+      LOG_INFO("------Not control message type-------");
+      return;
+      break;
+  }
+
+  switch(elka_msg.data[0]) {
+    case true:
+      sprintf(request, "request");
+      break;
+    case false:
+      sprintf(request, "statement");
+      break;
+    default:
+      break;
+  }
+
+  LOG_INFO("%s %s %s", msg_type_name, request, state);
+
+  LOG_INFO("----- End ctl message\n");
+}
+
+void elka::CommPort::print_elka_state() {
+  char hw_state[42], sw_state[42];
+  switch(_hw_state) {
+     case HW_CTL_NULL:
+      sprintf(hw_state, "NULL");
+      break;
+    case HW_CTL_FAILED:
+      sprintf(hw_state, "FAILED");
+      break;
+    case HW_CTL_KILL:
+      sprintf(hw_state, "KILL");
+      break;
+    case HW_CTL_START:
+      sprintf(hw_state, "START");
+      break;
+    case HW_CTL_STOP:
+      sprintf(hw_state, "STOP");
+      break;
+    case HW_CTL_PAUSE:
+      sprintf(hw_state, "PAUSE");
+      break;
+    case HW_CTL_RESUME:
+      sprintf(hw_state, "RESUME");
+      break;
+    default:
+      break;
+  }
+
+  switch(_sw_state) {
+    case SW_CTL_NULL:
+      sprintf(sw_state, "NULL");
+      break;
+    case SW_CTL_FAILED:
+      sprintf(sw_state, "FAILED");
+      break;
+    case SW_CTL_KILL:
+      sprintf(sw_state, "KILL");
+      break;
+    case SW_CTL_REMOTE:
+      sprintf(sw_state, "REMOTE");
+      break;
+    case SW_CTL_SPEKTRUM:
+      sprintf(sw_state, "SPEKTRUM");
+      break;
+    case SW_CTL_AUTOPILOT:
+      sprintf(sw_state, "AUTOPILOT");
+      break;
+    default:
+      break;
+  }
+
+  LOG_INFO("ELKA HW state: %s\tSW state: %s",
+      hw_state, sw_state);
 }

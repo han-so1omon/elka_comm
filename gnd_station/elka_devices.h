@@ -1,27 +1,25 @@
 #ifndef ELKA_POSIX_DEVICES_H
 #define ELKA_POSIX_DEVICES_H
 
-#include <drivers/drv_hrt.h>
 #include <map>
 #include <stdlib.h>
-#include <elka/common/elka.h>
-#include <elka/common/elka_comm.h>
+#include <elka_comm/common/elka.h>
+#include <elka_comm/common/elka_comm.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/elka_msg.h>
 #include <uORB/topics/elka_msg_ack.h>
 #include <utility>
 
-#include "elka_posix.h"
 #include "inet_comm.h"
 
 namespace elka {
-class PX4Port;
+class GroundPort;
 }
 
 // Manages connection with an ELKA device
 // Determines mode of input (autonomous or Spektrum)
 // Sends elka_msg_s messages to snapdragon_uart
-class elka::PX4Port : public elka::CommPort {
+class elka::GroundPort : public elka::CommPort {
 public:
 
   // elka_ack_snd is ack to be sent after parsing next cmd from rx_buf
@@ -36,19 +34,21 @@ public:
                     _elka_rcv,
                     _elka_rcv_cmd;
 
+  /*
   orb_advert_t _elka_msg_pub;
   orb_advert_t _elka_ack_pub;
+  */
 
-  PX4Port(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
+  GroundPort(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t size, char *dev_name);
 
-  ~PX4Port();
+  ~GroundPort();
 
   static int initialize(
       uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t queue_sz, char *dev_name);
 
-  static elka::PX4Port *get_instance() {
+  static elka::GroundPort *get_instance() {
     return _instance;
   }
 
@@ -95,13 +95,11 @@ public:
       elka_msg_s &elka_snd,
       dev_id_t rcv_id,
       uint8_t state,
-      bool elka_ctl);
+      bool hw);
 
   // Update _now variable with current time
   void update_time();
 
-private:
-  
   uint8_t start_port() override;
   uint8_t stop_port() override;
   uint8_t pause_port() override;
@@ -110,6 +108,9 @@ private:
   uint8_t remote_ctl_port() override;
   uint8_t autopilot_ctl_port() override;
 
+
+private:
+
   /*
   // Map from port id to port num
   // IDs correspond to _ports[i]->_id
@@ -117,10 +118,9 @@ private:
   */
 
   // Data members
-  static PX4Port *_instance; // Singleton port instance
+  static GroundPort *_instance; // Singleton port instance
 
   // This must be updated frequently thru callback or otherwise!
-  hrt_abstime _now;
   char _dev_name[MAX_NAME_LEN];
   uint8_t _inet_role;
   Child _inet_proc;
