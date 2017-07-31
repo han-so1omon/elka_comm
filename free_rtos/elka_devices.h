@@ -1,5 +1,5 @@
 #ifndef ELKA_FREE_RTOS_DEVICES_H
-#define ELKA_FREE_RTOSDEVICES_H
+#define ELKA_FREE_RTOS_DEVICES_H
 
 #include <map>
 #include <stdlib.h>
@@ -22,19 +22,35 @@ public:
 
   // elka_ack_snd is ack to be sent after parsing next cmd from rx_buf
   // elka_ack_rcv is ack received after sending msg from tx_buf
-  struct elka_msg_ack_s _elka_ack_rcv, _elka_ack_snd;
+  struct elka_msg_ack_s _elka_ack_rcv,
+                        _elka_ack_snd,
+                        _elka_ack_rcv_cmd;
   // elka_snd is msg to send from tx buf
-  // elka_ret is msg to push to rx buf
+  // elka_rcv is msg to push to rx buf
   // elka_rcv_cmd is msg to be parsed from rx buf
-  struct elka_msg_s _elka_snd, _elka_rcv;
+  struct elka_msg_s _elka_snd,
+                    _elka_rcv,
+                    _elka_rcv_cmd;
 
   ELKAPort(uint8_t port_num, uint8_t port_type, uint8_t buf_type,
       uint8_t size, char *dev_name);
 
   ~ELKAPort();
 
-  // Start serial thread
-  int init();
+  static int initialize(
+      uint8_t port_num, uint8_t port_type, uint8_t buf_type,
+      uint8_t queue_sz, char *dev_name);
+
+  static elka::ELKAPort *get_instance() {
+    return _instance;
+  }
+
+  /**
+   * Print statistics
+   * @param reset, if true reset statistics afterwards
+   * @return true if something printed, false otherwise
+   */
+  bool print_statistics(bool reset);
 
   // Add message to buffer
   // Adds message to buffer for all applicable
@@ -64,15 +80,12 @@ public:
   //         MSG_NULL if msg not meant for u
   //         MSG_FAILED If msg meant for u and incorrect
   uint8_t parse_elka_msg(elka_msg_s &elka_ret);
+  uint8_t parse_elka_msg(elka_msg_ack_s &elka_msg);
 
   // Check ack for sent message
   // Check ack with respect to port number from elka_ack.msg_id
   uint8_t check_ack(struct elka_msg_ack_s &elka_ack);
 
-  // Get state of internal state machine
-  // @return elka state defined by ELKA_CTL_<state>
-  uint8_t get_state();
-  
   // Set elka state in elka_msg. May push this to a buffer after
   uint8_t set_dev_state_msg(
       elka_msg_s &elka_snd,
@@ -83,24 +96,30 @@ public:
   // Update _now variable with current time
   void update_time();
 
+  uint8_t start_port() override;
+  uint8_t stop_port() override;
+  uint8_t pause_port() override;
+  uint8_t resume_port() override;
+
+  uint8_t remote_ctl_port() override;
+  uint8_t autopilot_ctl_port() override;
+
 private:
   
-  bool start_port() override;
-  bool stop_port() override;
-  bool pause_port() override;
-  bool resume_port() override;
-
   /*
   // Map from port id to port num
   // IDs correspond to _ports[i]->_id
   std::map<dev_id_t, uint8_t> _port_num_map;
   */
 
+  static ELKAPort *_instance; // Singleton port instance
+
   // This must be updated frequently thru callback or otherwise!
   char _dev_name[MAX_NAME_LEN];
+  int8_t _serial_port_state;
 
   // Class methods
-  int deinit();
+  int deinitialize();
 
   // Helper functions for parsing returned elka message based on current state
   // @return msg type:

@@ -3,7 +3,7 @@ add_library(elka_comm__free_rtos STATIC
 )
 
 set(ELKA_LINK_LIBS
-  "${ELKA_LINK_LIBS} elka_comm__free_rtos"
+  ${ELKA_LINK_LIBS} elka_comm__free_rtos
+  PARENT_SCOPE
 )
-
 

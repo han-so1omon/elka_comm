@@ -18,7 +18,8 @@ add_library(elka_comm__common STATIC
 )
 
 set(ELKA_LINK_LIBS
-  "${ELKA_LINK_LIBS} elka_comm__common"
+  ${ELKA_LINK_LIBS} elka_comm__common
+	PARENT_SCOPE
 )
 
 elseif(${OS} STREQUAL "ubuntu")

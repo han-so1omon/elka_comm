@@ -470,7 +470,6 @@ uint8_t elka::GroundPort::check_ack(struct elka_msg_ack_s &elka_ack) {
 void elka::GroundPort::update_time() {
 }
 
-//-----------------Private Methods---------------------
 void elka::GroundPort::wait_for_child(Child *child) {
 	int pid, status;
 

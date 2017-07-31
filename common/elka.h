@@ -84,12 +84,6 @@ struct snd_params_s {
   uint8_t port_num, port_type, proc_side;
 };
 
-#if defined(__ELKA_FREERTOS)
-
-#define UINT16_MAX 0xffff
-
-#endif
-
 // Define max id number
 #define ID_MAX UINT16_MAX
 
