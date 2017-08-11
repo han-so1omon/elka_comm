@@ -275,6 +275,12 @@ struct elka::CommPort {
   //                    if msg is not pushed correctly
   //uint8_t push_msg(dev_id_t &dst, uint8_t msg_type,
   //                 uint8_t len, uint8_t *data);
+  //                 p
+  uint8_t push_msg(msg_id_t msg_id,
+                   uint8_t *data,
+                   uint16_t msg_num,
+                   uint8_t num_retries,
+                   bool tx);
   uint8_t push_msg(elka_msg_s &elka_msg, bool tx);
   uint8_t push_msg(elka_msg_ack_s &elka_msg, bool tx);
 

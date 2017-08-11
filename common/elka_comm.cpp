@@ -713,6 +713,33 @@ uint8_t elka::CommPort::push_msg(
 */
 
 uint8_t elka::CommPort::push_msg(
+    msg_id_t msg_id,
+    uint8_t *data,
+    uint16_t msg_num,
+    uint8_t num_retries,
+    bool tx) {
+  elka::SerialBuffer *sb;
+  struct elka_msg_id_s msg_id_struct;
+
+  get_elka_msg_id_attr(&msg_id_struct, msg_id);
+
+  if ((!broadcast_msg(msg_id_struct.rcv_id) &&
+       !check_route(msg_id_struct.rcv_id))
+      || initial_msg(msg_id,
+                     msg_num,
+                     num_retries)) {
+    return MSG_NULL;
+  }
+
+  if (tx)
+    sb = _tx_buf;
+  else
+    sb = _rx_buf;
+
+  return sb->push_msg(msg_id, data, msg_num, num_retries);
+}
+
+uint8_t elka::CommPort::push_msg(
     elka_msg_s &elka_msg,
     bool tx) {
   elka::SerialBuffer *sb;
